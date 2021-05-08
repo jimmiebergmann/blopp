@@ -1,5 +1,6 @@
 language: cpp
 
+os: linux
 dist: xenial
   
 addons:
@@ -14,7 +15,7 @@ addons:
       - valgrind
     update: true
   
-matrix:
+jobs:
   include:
   
     - os: linux
