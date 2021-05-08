@@ -1,6 +1,6 @@
 # blopp
-![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) [![Travis CI](https://img.shields.io/travis/jimmiebergmann/blopp/master?label=Travis%20CI)](https://travis-ci.org/jimmiebergmann/blopp) [![AppVeyor](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)
-Single header C++17 binary serializer/deserializer with respect to alignments.
+![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) [![Travis CI](https://img.shields.io/travis/jimmiebergmann/blopp/master?label=Travis%20CI)](https://travis-ci.org/jimmiebergmann/blopp) [![AppVeyor](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
+Single header C++17 binary serializer/deserializer with respect to member alignments.
 
 ## Installation
 ``` shell
