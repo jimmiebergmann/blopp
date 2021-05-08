@@ -3,7 +3,7 @@
 Single header C++17 binary serializer/deserializer with respect to member alignments.
 
 ## Installation
-``` shell
+```
 git clone https://github.com/jimmiebergmann/blopp.git
 Include blopp/blopp.hpp in your project.
 ```
@@ -18,7 +18,7 @@ struct data
 {
     int32_t a;
     bool b; // Example of alignment, offsetof(data, c) == 8, not 5.
-    float c;
+    double c;
 
     // Add this function to your struct.
     template<typename t_context>
@@ -34,9 +34,9 @@ struct data
 
 int main()
 {
-    // Serializing data and deserializing it back, input and output is equal.
-    const auto input = data{ 123, true, 128.75f };
-    const auto raw_input = blopp::serialize(input);
-    const auto output = blopp::deserialize<data>(raw_input);
+    // Serializing data and deserializing it back.
+    auto input = data{ 123, true, 128.75 };
+    auto raw_input = blopp::serialize(input);
+    auto output = blopp::deserialize<data>(raw_input);
 }
 ```
