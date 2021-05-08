@@ -9,7 +9,10 @@ Include blopp/blopp.hpp in your project.
 ```
 
 ## Requirements
-- C++17 compiler
+- C++17 compiler, tested with:
+  - clang-8
+  - gcc-8
+  - mvc 19.28 (Visual Studio 19)
 - Cmake - only for tests.
 
 ## Example
