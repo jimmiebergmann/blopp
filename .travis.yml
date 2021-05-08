@@ -1,0 +1,74 @@
+language: cpp
+
+dist: xenial
+  
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+      - llvm-toolchain-xenial-8
+    packages:
+      - gcc-8
+      - g++-8
+      - clang-8
+      - valgrind
+    update: true
+  
+matrix:
+  include:
+  
+    - os: linux
+      compiler: gcc
+      env:
+        - CC=gcc-8 CXX=g++-8
+        - CONFIG=Release
+        
+    - os: linux
+      compiler: gcc
+      env:
+        - CC=gcc-8 CXX=g++-8
+        - CONFIG=Debug OUTPUT_NAME_POSTFIX=_d
+        
+    - os: linux
+      compiler: clang
+      env:
+        - CC=clang-8 && CXX=clang++-8
+        - CONFIG=Release
+        
+    - os: linux
+      compiler: clang
+      env:
+        - CC=clang-8 && CXX=clang++-8
+        - CONFIG=Debug OUTPUT_NAME_POSTFIX=_d
+        
+before_script:
+  - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 90
+  - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 90
+  - sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 90
+  - sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 90 
+  - |
+      DOWNLOAD_CMAKE_VERSION=3.18.1
+      wget -O cmake.sh https://github.com/Kitware/CMake/releases/download/v${DOWNLOAD_CMAKE_VERSION}/cmake-${DOWNLOAD_CMAKE_VERSION}-Linux-x86_64.sh
+      mkdir -p /tmp/cmake
+      sudo sh cmake.sh --skip-license --exclude-subdir --prefix=/tmp/cmake
+      export PATH=/tmp/cmake/bin:$PATH
+  
+  
+script:
+  # Checks
+  - cmake --version
+  - g++ --version
+  - gcc --version
+  
+  # Build
+  - mkdir build
+  - cd build
+  - cmake -DCMAKE_BUILD_TYPE=${CONFIG} ..
+  - cmake --build . --config ${CONFIG}
+  # Run test
+  - cd ../bin
+  - valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blob_static_tests${OUTPUT_NAME_POSTFIX}
+  
+
+notifications:
+  email: false

@@ -1,3 +1,7 @@
+# Directories
+/[B|b]uild
+/[B|b]in
+
 # Prerequisites
 *.d
 
