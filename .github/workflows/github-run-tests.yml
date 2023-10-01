@@ -32,9 +32,6 @@ jobs:
         with:
           python-version: 3.7
 
-      - name: Install Conan
-        run: pip3 install conan --upgrade
-
       - name: Install packages
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key 2>/dev/null | sudo apt-key add -
@@ -47,7 +44,12 @@ jobs:
           sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-12 90  
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 90
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 90
-          
+
+      - name: Install Conan
+        run: | 
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
       - name: Check versions
         run: |
           cmake --version
@@ -69,7 +71,7 @@ jobs:
         run: |
           cd bin
           valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
-          
+
       #- uses: codecov/codecov-action@v3
       #  if: ${{ matrix.compiler == 'g++' && matrix.build_type == 'Debug' }}
       #  with:
