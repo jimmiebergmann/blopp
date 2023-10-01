@@ -310,7 +310,7 @@ namespace blopp::impl {
                 m_byte_count += sizeof(element_t) * element_count;
             }
             else {
-                for (const auto element_value : value) {
+                for (const auto& element_value : value) {
                     map_impl<true>(element_value);
                 }
             }
