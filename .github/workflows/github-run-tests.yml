@@ -69,7 +69,7 @@ jobs:
 
       - name: Test
         run: |
-          cd ../bin
+          cd tests/bin
           valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
 
       #- uses: codecov/codecov-action@v3
