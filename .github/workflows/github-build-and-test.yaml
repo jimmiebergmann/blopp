@@ -1,0 +1,99 @@
+name: Build and test
+on: push
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+        matrix:
+          compiler:
+            - cc: gcc-12
+              cxx: g++-12
+          build_type: [Debug, Release]
+          include:
+            - build_type: Debug
+              output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
+
+  mac:
+    runs-on: macos-latest
+
+    env:
+      HOMEBREW_NO_AUTO_CLEANUP: 1
+
+    strategy:
+      matrix:
+        compiler: 
+          - cc: gcc-12
+            cxx: g++-12
+          - cc: clang, 
+            cxx: clang++
+        build_type: [Debug, Release]
+        include:
+          - build_type: Debug
+            output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
+
+  windows:
+    runs-on: windows-latest
+
+    strategy:
+        matrix:
+          build_type: [Debug, Release]
+          include:
+            - build_type: Debug
+              output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}

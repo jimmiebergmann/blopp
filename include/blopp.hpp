@@ -83,11 +83,10 @@ namespace blopp::impl {
         float64 = 10,
         string = 11,
         object = 12,
-        list = 13,
-        array = 14
+        list = 13
     };
 
-    static constexpr uint8_t data_types_count = 15;
+    static constexpr uint8_t data_types_count = 14;
 
     constexpr bool validate_data_type(const data_types data_type)
     {
@@ -279,7 +278,9 @@ namespace blopp::impl {
                 m_byte_count += sizeof(data_types);
             }
 
-            auto size_writer = post_output_writer<size_t>{ m_output };
+            const auto block_start_position = m_byte_count;
+
+            auto block_size_writer = post_output_writer<size_t>{ m_output };
 
             const auto element_data_type = get_data_type<element_t>();
             write_bytes(element_data_type);
@@ -307,7 +308,10 @@ namespace blopp::impl {
                 for (const auto element_value : value) {
                     map_impl<true>(element_value);
                 }
-            }            
+            }
+
+            const auto block_size = m_byte_count - block_start_position;
+            block_size_writer.update(block_size);
         };
 
         template<bool VSkipDataType>
@@ -319,16 +323,18 @@ namespace blopp::impl {
                 m_byte_count += sizeof(data_types);
             }
 
-            auto size_writer = post_output_writer<size_t>{ m_output };
+            const auto block_start_position = m_byte_count;
+
+            auto block_size_writer = post_output_writer<size_t>{ m_output };
             auto property_count_writer = post_output_writer<uint16_t>{ m_output };
+            m_byte_count += sizeof(size_t) + sizeof(uint16_t);
 
             auto object_write_context = write_context{ m_output };
             object<value_t>::map(object_write_context, value);
+            m_byte_count += object_write_context.m_byte_count;
 
-            auto object_size = sizeof(size_t) + sizeof(uint16_t) + object_write_context.m_byte_count;
-            m_byte_count += object_size;
-
-            size_writer.update(object_size);
+            const auto block_size = m_byte_count - block_start_position;
+            block_size_writer.update(block_size);
             property_count_writer.update(object_write_context.m_property_count);
         }
 
