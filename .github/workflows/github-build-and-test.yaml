@@ -53,10 +53,8 @@ jobs:
     strategy:
       matrix:
         compiler: 
-          - cc: gcc-12
-            cxx: g++-12
-          - cc: clang
-            cxx: clang++
+          - cc: clang-16
+            cxx: clang++-16
         build_type: [Debug, Release]
         include:
           - build_type: Debug
@@ -65,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Clang
+      - name: Set up Clang 16
         run: brew install llvm@16
 
       - name: Setup Conan
