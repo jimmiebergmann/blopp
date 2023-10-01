@@ -73,11 +73,8 @@ jobs:
           $(brew --prefix llvm@16)/bin/clang --version
           $(brew --prefix llvm@16)/bin/clang++ --version
 
-          cd /usr/local/opt/llvm/bin
-          ls
-
-          ./usr/local/opt/llvm/bin/clang --version
-          ./usr/local/opt/llvm/bin/clang++ --version
+          /usr/local/opt/llvm/bin/clang --version
+          /usr/local/opt/llvm/bin/clang++ --version
 
       - name: Setup Conan
         run: |
