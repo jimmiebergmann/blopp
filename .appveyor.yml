@@ -17,7 +17,7 @@ install:
   - cmake --version
   - set PATH=%PATH%;%PYTHON%/Scripts/
   - pip.exe install conan
-  - conan user
+  - conan profile detect --force
   - conan --version
   
 build_script:
