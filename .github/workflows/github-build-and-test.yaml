@@ -19,6 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: apt install dependency
+        run: |
+          sudo apt-get -y install valgrind
+
       - name: Setup Conan
         run: |
           pip3 install conan --upgrade
@@ -35,6 +39,11 @@ jobs:
           CC: ${{ matrix.compiler.cc }}
           CXX: ${{ matrix.compiler.cxx }}
 
+      - name: Test
+        run: |
+          cd tests/bin
+          valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
+
   mac:
     runs-on: macos-latest
 
@@ -46,7 +55,7 @@ jobs:
         compiler: 
           - cc: gcc-12
             cxx: g++-12
-          - cc: clang, 
+          - cc: clang
             cxx: clang++
         build_type: [Debug, Release]
         include:
@@ -71,6 +80,11 @@ jobs:
         env:
           CC: ${{ matrix.compiler.cc }}
           CXX: ${{ matrix.compiler.cxx }}
+
+      - name: Test
+        run: |
+          cd tests/bin
+          ./blopp_tests${{matrix.output_name_postfix}}
 
   windows:
     runs-on: windows-latest
@@ -97,3 +111,8 @@ jobs:
           cd build
           cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
+
+      - name: Test
+        run: |
+          cd tests/bin
+          ./blopp_tests${{matrix.output_name_postfix}}.exe
