@@ -3,6 +3,15 @@
 struct test_object_empty {
 };
 
+struct test_object_nested_1 {
+    int32_t nested_value_1;
+    double nested_value_2;
+};
+
+struct test_object_nested_2 {
+    test_object_nested_1 object_nested_1_value;
+};
+
 struct test_object_1 {
     bool bool_value;
     int8_t int8_value;
@@ -13,13 +22,36 @@ struct test_object_1 {
     uint16_t uint16_value;
     uint32_t uint32_value;
     uint64_t uint64_value;
+    char char_value;
+    float float32_value;
+    double float64_value;
     std::string string_value;
+    test_object_empty object_empty_value;
+    test_object_nested_2 object_nested_2_value;
+    std::vector<test_object_empty> object_empty_vector;
 };
 
 
 template<>
 struct blopp::object<test_object_empty> {
     static void map(auto&, auto&) {
+    }
+};
+
+template<>
+struct blopp::object<test_object_nested_1> {
+    static void map(auto& context, auto& value) {
+        context
+            .map(value.nested_value_1)
+            .map(value.nested_value_2);
+    }
+};
+
+template<>
+struct blopp::object<test_object_nested_2> {
+    static void map(auto& context, auto& value) {
+        context
+            .map(value.object_nested_1_value);
     }
 };
 
@@ -36,7 +68,13 @@ struct blopp::object<test_object_1> {
             .map(value.uint16_value)
             .map(value.uint32_value)
             .map(value.uint64_value)
-            .map(value.string_value);
+            .map(value.char_value)
+            .map(value.float32_value)
+            .map(value.float64_value)
+            .map(value.string_value)
+            .map(value.object_empty_value)
+            .map(value.object_nested_2_value)
+            .map(value.object_empty_vector);
     }
 };
 
@@ -176,6 +214,66 @@ TEST(blopp, write_read_uint64_t) {
     }
 }
 
+TEST(blopp, write_read_char) {
+    {
+        auto input_bytes = blopp::write(char{ '\0' });
+        auto output_result = blopp::read<char>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), char{ '\0' });
+    }
+    {
+        auto input_bytes = blopp::write(char{ 'F' });
+        auto output_result = blopp::read<char>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), char{ 'F' });
+    }
+}
+
+TEST(blopp, write_read_char8_t) {
+    {
+        auto input_bytes = blopp::write(char8_t{ '\0' });
+        auto output_result = blopp::read<char8_t>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), char8_t{ '\0' });
+    }
+    {
+        auto input_bytes = blopp::write(char8_t{ 'E' });
+        auto output_result = blopp::read<char8_t>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), char8_t{ 'E' });
+    }
+}
+
+TEST(blopp, write_read_float) {
+    {
+        auto input_bytes = blopp::write(float{ 0.0f });
+        auto output_result = blopp::read<float>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), float{ 0.0f });
+    }
+    {
+        auto input_bytes = blopp::write(float{ 512.0f });
+        auto output_result = blopp::read<float>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), float{ 512.0f });
+    }
+}
+
+TEST(blopp, write_read_double) {
+    {
+        auto input_bytes = blopp::write(double{ 0.0 });
+        auto output_result = blopp::read<double>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), double{ 0.0 });
+    }
+    {
+        auto input_bytes = blopp::write(double{ 512.0 });
+        auto output_result = blopp::read<double>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ(output_result.value(), double{ 512.0 });
+    }
+}
+
 TEST(blopp, write_read_string) {
     {
         auto input_bytes = blopp::write(std::string{ "" });
@@ -209,7 +307,18 @@ TEST(blopp, write_read_test_object_1) {
         .uint16_value = 2'223,
         .uint32_value = 2'234'567'890,
         .uint64_value = 2'234'567'890'123ULL,
-        .string_value = "The quick brown fox jumps over the lazy dog"
+        .char_value = 'A',
+        .float32_value = 1.25f,
+        .float64_value = 2.5,
+        .string_value = "The quick brown fox jumps over the lazy dog",
+        .object_empty_value = {},
+        .object_nested_2_value = test_object_nested_2{
+            .object_nested_1_value = test_object_nested_1{
+                .nested_value_1 = 1,
+                .nested_value_2 = 2.0
+            }
+        },
+        .object_empty_vector = { {}, {}, {} }
     };
 
     auto input_bytes = blopp::write(input);
@@ -227,6 +336,16 @@ TEST(blopp, write_read_test_object_1) {
     EXPECT_EQ(output.uint16_value, input.uint16_value);
     EXPECT_EQ(output.uint32_value, input.uint32_value);
     EXPECT_EQ(output.uint64_value, input.uint64_value);
+    EXPECT_EQ(output.char_value, input.char_value);
+    EXPECT_EQ(output.float32_value, input.float32_value);
+    EXPECT_EQ(output.float64_value, input.float64_value);
     EXPECT_STREQ(output.string_value.c_str(), input.string_value.c_str());
+    EXPECT_EQ(
+        output.object_nested_2_value.object_nested_1_value.nested_value_1, 
+        input.object_nested_2_value.object_nested_1_value.nested_value_1);
+    EXPECT_EQ(
+        output.object_nested_2_value.object_nested_1_value.nested_value_2,
+        input.object_nested_2_value.object_nested_1_value.nested_value_2);
+    EXPECT_EQ(output.object_empty_vector.size(), input.object_empty_vector.size());
 }
 

@@ -81,12 +81,13 @@ namespace blopp::impl {
         uint64 = 8,
         float32 = 9,
         float64 = 10,
-        string = 11,
-        object = 12,
-        list = 13
+        character = 11,
+        string = 12,
+        object = 13,
+        list = 14
     };
 
-    static constexpr uint8_t data_types_count = 14;
+    static constexpr uint8_t data_types_count = 15;
 
     constexpr bool validate_data_type(const data_types data_type)
     {
@@ -122,6 +123,10 @@ namespace blopp::impl {
     struct fundamental_traits<uint32_t> : fundamental_traits_base< data_types::uint32> {};
     template<>
     struct fundamental_traits<uint64_t> : fundamental_traits_base< data_types::uint64> {};
+    template<>
+    struct fundamental_traits<char> : fundamental_traits_base< data_types::character> {};
+    template<>
+    struct fundamental_traits<char8_t> : fundamental_traits_base< data_types::character> {};
     template<>
     struct fundamental_traits<float> : fundamental_traits_base< data_types::float32> {};
     template<>
