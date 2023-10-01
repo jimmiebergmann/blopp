@@ -30,7 +30,22 @@ set_target_properties(blopp_tests PROPERTIES
 )
 
 target_link_libraries(blopp_tests gtest::gtest)
-  
+
+if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang|GNU")  
+    if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+      target_compile_options(blopp_tests PRIVATE -Wmove -stdlib=libc++)
+    endif()   
+    target_compile_options(blopp_tests PRIVATE -Werror -Wall -Wextra -Wno-long-long)    
+    if("${CMAKE_BUILD_TYPE}" MATCHES Debug)
+      target_compile_options(blopp_tests PRIVATE -g)
+    else()
+      target_compile_options(blopp_tests PRIVATE -O3)
+    endif()
+
+  elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    target_compile_options(blopp_tests PRIVATE /W4 /WX /w44062)
+  endif()
+
 set_target_properties(blopp_tests PROPERTIES
   OUTPUT_NAME_DEBUG "blopp_tests_d"
   OUTPUT_NAME_RELEASE "blopp_tests"
