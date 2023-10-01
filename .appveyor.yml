@@ -15,6 +15,10 @@ environment:
   
 install:
   - cmake --version
+  - set PATH=%PATH%;%PYTHON%/Scripts/
+  - pip.exe install conan
+  - conan user
+  - conan --version
   
 build_script:
   - cd tests
