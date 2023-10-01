@@ -10,8 +10,9 @@ or copy include/blopp.hpp to your project.
 
 ## Requirements
 - C++23 compiler, tested with:
-  - Windows: Visual Studio 2022 (17.6.5)
-  - Linux: gcc-12 and clang-16 (libc++)
+  - Windows: Visual Studio 2022 
+  - Linux: gcc-12
+  - Mac: clang-16
 - Cmake - Only for tests.
 - Conan - Only for tests.
 
@@ -20,26 +21,22 @@ or copy include/blopp.hpp to your project.
 #include "blopp.hpp"
 
 // Your data structures.
-struct product
-{
+struct product {
     uint32_t id;
     std::string name;
     double price;
 };
 
-struct store
-{
+struct store {
     std::string name;
     std::vector<product> products;
 };
 
 // Implement custom object mappers via specializations of blopp::object<T>.
 template<>
-struct blopp::object<product>
-{
-    static auto map(auto context, auto value)
-    {
-        return context
+struct blopp::object<product> {
+    static void map(auto& context, auto& value) {
+        context
             .map(value.id)
             .map(value.name)
             .map(value.price);
@@ -47,12 +44,10 @@ struct blopp::object<product>
 };
 
 template<>
-struct blopp::object<store>
-{
-    static auto map(auto context, auto value)
-    {
-        return context
-            .map(value.id)
+struct blopp::object<store> {
+    static void map(auto& context, auto& value) {
+        context
+            .map(value.name)
             .map(value.products);
     }
 };
