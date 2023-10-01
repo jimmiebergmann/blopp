@@ -1,0 +1,68 @@
+name: Build and test
+on: push
+
+jobs:
+
+  Linux:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        compiler: [g++, clang]
+        build_type: [Debug, Release]
+        include:
+          - compiler: g++
+            c_compiler: gcc-11
+            cpp_compiler: g++-11
+          - compiler: clang
+            c_compiler: clang-16
+            cpp_compiler: clang++-11
+          - build_type: Debug
+            output_name_postfix: Debug
+            
+    env:
+      CC: ${{matrix.c_compiler}}
+      CXX: ${{matrix.cpp_compiler}}
+      
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+      - name: Install Conan
+        run: pip install "conan<2.0" pytest && conan --version
+      - name: Install packages
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key 2>/dev/null | sudo apt-key add -
+          sudo add-apt-repository 'deb http://apt.llvm.org/focal llvm-toolchain-focal-16 main' -y
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt update
+          sudo apt install build-essential gcc-12 g++-12 clang-16 lcov valgrind
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 90
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 90
+          sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-12 90  
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 90
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 90
+          
+      - name: Check versions
+        run: |
+          cmake --version
+          ${{matrix.c_compiler}} --version
+          ${{matrix.cpp_compiler}} --version
+          gcov --version
+          python --version
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+      - name: Test
+        run: |
+          cd bin
+          valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
+      #- uses: codecov/codecov-action@v3
+      #  if: ${{ matrix.compiler == 'g++' && matrix.build_type == 'Debug' }}
+      #  with:
+      #    gcov: true

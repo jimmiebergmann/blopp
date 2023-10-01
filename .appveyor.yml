@@ -1,46 +1,28 @@
-environment:
-    
-  matrix:
-  
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      compiler: msvc-16-seh
-      generator: "Visual Studio 16 2019"
+environment:  
+
+  matrix:  
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+      generator: "Visual Studio 17 2022"
+      arch: x64
       configuration: Debug
       output_name_postfix: _d
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+      generator: "Visual Studio 17 2022"
       arch: x64
-      MOLTEN_ENABLE_VULKAN: -DMOLTEN_ENABLE_VULKAN=On
-      
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      compiler: msvc-16-seh
-      generator: "Visual Studio 16 2019"
-      configuration: Debug
-      output_name_postfix: _d
-      arch: Win32
-    
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      compiler: msvc-16-seh
-      generator: "Visual Studio 16 2019"
-      configuration: Release
-      arch: x64
-      
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      compiler: msvc-16-seh
-      generator: "Visual Studio 16 2019"
-      configuration: Release
-      arch: Win32   
+      configuration: Release 
   
 install:
   - cmake --version
-
   
 build_script:
-  - ls
-  - mkdir build
+  - cd tests
+  - conan install . --output-folder=build --build=missing --settings=build_type=%configuration%
   - cd build
-  - echo %configuration%
-  - cmake -G "%generator%" -A "%arch%" "-DCMAKE_BUILD_TYPE=%configuration%" ..
+  - cmake -G "%generator%" -A "%arch%" .. -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
   - cmake --build . --config %configuration%
    
 after_build:
-   - cd ../bin
-   - blob_static_tests%output_name_postfix%.exe
+   - cd bin
+   - blopp_tests%output_name_postfix%.exe

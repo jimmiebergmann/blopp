@@ -1,6 +1,8 @@
 # Directories
-/[B|b]uild
-/[B|b]in
+.vs
+.vscode
+*/[B|b]uild
+*/[B|b]in
 
 # Prerequisites
 *.d
@@ -29,6 +31,13 @@
 *.la
 *.a
 *.lib
+
+# Temporary
+*~
+*.tlog
+Valgrind*
+CppCheckResults*
+CmakeUserPresets.json
 
 # Executables
 *.exe

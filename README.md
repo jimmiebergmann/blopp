@@ -1,45 +1,92 @@
 # blopp
-![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) [![Travis CI](https://img.shields.io/travis/jimmiebergmann/blopp/master?label=Travis%20CI)](https://travis-ci.org/jimmiebergmann/blopp) [![AppVeyor](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
-Single header C++17 binary serializer/deserializer with respect to member alignments.
+![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Workflow Status (master)](https://img.shields.io/github/workflow/status/jimmiebergmann/blopp/Build/master?label=Github&logo=Github) [![AppVeyor Status (master)](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
+Single header C++23 binary reader/writer.
 
 ## Installation
 ```
 git clone https://github.com/jimmiebergmann/blopp.git
-Include blopp/blopp.hpp in your project.
+or copy include/blopp.hpp to your project.
 ```
 
 ## Requirements
-- C++17 compiler, tested with:
-  - clang-8
-  - gcc-8
-  - mvc 19.28 (Visual Studio 19)
-- Cmake - only for tests.
+- C++23 compiler, tested with:
+  - Windows: Visual Studio 2022 (17.6.5)
+  - Linux: gcc-12 and clang-16 (libc++)
+- Cmake - Only for tests.
+- Conan - Only for tests.
 
 ## Example
 ``` cpp
-struct data
-{
-    int32_t a;
-    bool b; // Example of alignment, offsetof(data, c) == 8, not 5.
-    double c;
+#include "blopp.hpp"
 
-    // Add this function to your struct.
-    template<typename t_context>
-    static constexpr auto blopp_map(t_context context)
+// Your data structures.
+struct product
+{
+    uint32_t id;
+    std::string name;
+    double price;
+};
+
+struct store
+{
+    std::string name;
+    std::vector<product> products;
+};
+
+// Implement custom object mappers via specializations of blopp::object<T>.
+template<>
+struct blopp::object<product>
+{
+    static auto map(auto context, auto value)
     {
-        // Map data members in expected binary order.
-        return context.map(
-            blopp_map_member(data, a),
-            blopp_map_member(data, b),
-            blopp_map_member(data, c));
+        return context
+            .map(value.id)
+            .map(value.name)
+            .map(value.price);
     }
 };
 
+template<>
+struct blopp::object<store>
+{
+    static auto map(auto context, auto value)
+    {
+        return context
+            .map(value.id)
+            .map(value.products);
+    }
+};
+
+// Write and read your data structures.
 int main()
 {
-    // Serializing data and deserializing it back.
-    auto input = data{ 123, true, 128.75 };
-    auto raw_input = blopp::serialize(input);
-    auto output = blopp::deserialize<data>(raw_input);
+    auto input = store{
+        .name = "Fruit store",
+        .products = {
+            { 
+                .id = 1,
+                .name = "Apple",
+                .price = 1.5
+            },
+            {
+                .id = 2,
+                .name = "Orange",
+                .price = 2.1
+            }
+        }
+    };
+    auto input_bytes = blopp::write(input);
+    auto output_result = blopp::read<store>(input_bytes);
+    if(!output_result) { /* Error checking. */}
+    auto output = *output_result;
 }
+```
+
+## Build tests
+```
+cd tests
+conan install . --output-folder=build --build=missing --settings=build_type=Debug
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+cmake --build . --config Debug
 ```
