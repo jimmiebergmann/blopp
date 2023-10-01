@@ -64,7 +64,7 @@ jobs:
           cd tests
           conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
           cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
 
       - name: Test
