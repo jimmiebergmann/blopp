@@ -53,8 +53,8 @@ jobs:
     strategy:
       matrix:
         compiler: 
-          - cc: clang-16
-            cxx: clang++-16
+          - cc: clang
+            cxx: clang++
         build_type: [Debug, Release]
         include:
           - build_type: Debug
@@ -65,6 +65,13 @@ jobs:
 
       - name: Set up Clang 16
         run: brew install llvm@16
+
+      - name: check clang version¨
+        run: |
+          clang --version
+          clang++ --version
+          $(brew --prefix llvm@16)/bin/clang --version
+          $(brew --prefix llvm@16)/bin/clang++ --version
 
       - name: Setup Conan
         run: |
@@ -79,8 +86,8 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
         env:
-          CC: ${{ matrix.compiler.cc }}
-          CXX: ${{ matrix.compiler.cxx }}
+          CC: $(brew --prefix llvm@16)/bin/${{ matrix.compiler.cc }}
+          CXX: $(brew --prefix llvm@16)/bin/${{ matrix.compiler.cxx }}
 
       - name: Test
         run: |
