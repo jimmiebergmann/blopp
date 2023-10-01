@@ -33,7 +33,7 @@ target_link_libraries(blopp_tests gtest::gtest)
 
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang|GNU")  
     if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-      target_compile_options(blopp_tests PRIVATE -Wmove -stdlib=libc++)
+      target_compile_options(blopp_tests PRIVATE -Wmove -std=c++2b -stdlib=libc++)
     endif()   
     target_compile_options(blopp_tests PRIVATE -Werror -Wall -Wextra -Wno-long-long)    
     if("${CMAKE_BUILD_TYPE}" MATCHES Debug)

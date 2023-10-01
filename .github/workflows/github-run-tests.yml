@@ -17,7 +17,7 @@ jobs:
             c_compiler: clang-16
             cpp_compiler: clang++-16
           - build_type: Debug
-            output_name_postfix: Debug
+            output_name_postfix: _d
             
     env:
       CC: ${{matrix.c_compiler}}
