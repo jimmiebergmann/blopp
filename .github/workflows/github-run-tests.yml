@@ -24,13 +24,17 @@ jobs:
       CXX: ${{matrix.cpp_compiler}}
       
     steps:
+
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: 3.7
+
       - name: Install Conan
-        run: pip install "conan<2.0" pytest && conan --version
+        run: pip3 install conan --upgrade
+
       - name: Install packages
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key 2>/dev/null | sudo apt-key add -
@@ -52,6 +56,7 @@ jobs:
           ${{matrix.cpp_compiler}} --version
           gcov --version
           python --version
+
       - name: Build
         run: |
           cd tests
@@ -59,10 +64,12 @@ jobs:
           cd build
           cmake .. -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
+
       - name: Test
         run: |
           cd bin
           valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
+          
       #- uses: codecov/codecov-action@v3
       #  if: ${{ matrix.compiler == 'g++' && matrix.build_type == 'Debug' }}
       #  with:

@@ -28,5 +28,5 @@ build_script:
   - cmake --build . --config %configuration%
    
 after_build:
-   - cd bin
+   - cd ../bin
    - blopp_tests%output_name_postfix%.exe
