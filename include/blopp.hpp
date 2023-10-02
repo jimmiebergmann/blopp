@@ -162,7 +162,7 @@ namespace blopp::impl {
     }
 
     template<typename T>
-    data_types get_data_type() {
+    constexpr data_types get_data_type() {
         using value_fundamental_traits = fundamental_traits<T>;
         if constexpr (value_fundamental_traits::is_fundamental == true) {
             return value_fundamental_traits::data_type;
@@ -254,18 +254,29 @@ namespace blopp::impl {
             m_output.push_back(static_cast<uint8_t>(data_types::null));
         }
 
-        template<bool VSkipDataType>
-        inline void write_fundamental(const auto& value) {
-            using value_t = std::decay_t<decltype(value)>;
+        template<bool VSkipDataType, typename T>
+        inline void write_fundamental_value(const T& value) {
+            using value_t = std::decay_t<T>;
             using value_fundamental_traits = fundamental_traits<value_t>;
-            
+
             if constexpr (VSkipDataType == false) {
                 m_output.push_back(static_cast<uint8_t>(value_fundamental_traits::data_type));
                 m_byte_count += sizeof(data_types);
             }
-            
+
             write_bytes(value);
             m_byte_count += sizeof(value_t);
+        }
+
+        template<bool VSkipDataType>
+        inline void write_fundamental(const auto& value) {
+            write_fundamental_value<VSkipDataType>(value);
+        }
+
+        template<bool VSkipDataType>
+        inline void write_enum(const auto& value) {
+            using value_t = std::underlying_type_t<std::decay_t<decltype(value)>>;
+            write_fundamental_value<VSkipDataType, value_t>(static_cast<value_t>(value));
         }
 
         template<bool VSkipDataType>
@@ -360,6 +371,9 @@ namespace blopp::impl {
 
             if constexpr (value_fundamental_traits::is_fundamental == true) {
                 write_fundamental<VSkipDataType>(value);
+            }
+            else if constexpr (std::is_enum_v<value_t> == true) {
+                write_enum<VSkipDataType>(value);
             }
             else if constexpr (std::is_same_v<value_t, std::string> == true) {
                 write_string<VSkipDataType>(value);
@@ -456,11 +470,11 @@ namespace blopp::impl {
             m_input = m_input.subspan(byte_count);
         }
 
-        template<bool VSkipDataType>
-        inline auto read_fundamental(auto& value) -> std::expected<void, read_error_code> {
-            using value_t = std::decay_t<decltype(value)>;
+        template<bool VSkipDataType, typename T>
+        inline auto read_fundamental_value(T& value) -> std::expected<void, read_error_code> {
+            using value_t = std::decay_t<T>;
             using value_fundamental_traits = fundamental_traits<value_t>;
-            
+
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
                     return std::unexpected(read_error_code::insufficient_data);
@@ -479,6 +493,17 @@ namespace blopp::impl {
             value = read_input_value<value_t>();
 
             return {};
+        }
+
+        template<bool VSkipDataType>
+        inline auto read_fundamental(auto& value) -> std::expected<void, read_error_code> {
+            return read_fundamental_value<VSkipDataType>(value);
+        }
+
+        template<bool VSkipDataType>
+        inline auto read_enum(auto& value) -> std::expected<void, read_error_code> {
+            using value_t = std::underlying_type_t<std::decay_t<decltype(value)>>;
+            return read_fundamental_value<VSkipDataType>(reinterpret_cast<value_t&>(value));
         }
 
         template<bool VSkipDataType>
@@ -630,6 +655,11 @@ namespace blopp::impl {
 
             if constexpr (value_fundamental_traits::is_fundamental == true) {
                 if (auto result = read_fundamental<VSkipDataType>(value); !result) {
+                    m_error = result.error();
+                }
+            }
+            else if constexpr (std::is_enum_v<value_t> == true) {
+                if (auto result = read_enum<VSkipDataType>(value); !result) {
                     m_error = result.error();
                 }
             }

@@ -21,7 +21,8 @@ or copy include/blopp.hpp to your project.
 * Fundamental data types, including 
     `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
     `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
-* User defined `struct` or `class`
+* `struct` or `class`
+* `enum`
 * `std::string`
 * `std::vector` and `std::list`
 * `std::unique_ptr`
@@ -31,6 +32,11 @@ or copy include/blopp.hpp to your project.
 #include "blopp.hpp"
 
 // Your data structures.
+enum class units : uint8_t {
+    kg,
+    lbs
+};
+
 struct product {
     uint32_t id;
     std::string name;
@@ -49,7 +55,8 @@ struct blopp::object<product> {
         context
             .map(value.id)
             .map(value.name)
-            .map(value.price);
+            .map(value.price)
+            .map(value.unit);
     }
 };
 
@@ -65,18 +72,20 @@ struct blopp::object<store> {
 // Write and read your data structures.
 int main()
 {
-    auto input = store{
+    const auto input = store{
         .name = "Fruit store",
         .products = {
-            { 
+            {
                 .id = 1,
                 .name = "Apple",
-                .price = 1.5
+                .price = 1.5,
+                .unit = units::kg
             },
             {
                 .id = 2,
                 .name = "Orange",
-                .price = 2.1
+                .price = 4.1,
+                .unit = units::lbs
             }
         }
     };
