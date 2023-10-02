@@ -58,10 +58,10 @@ namespace blopp {
     };
 
     template<typename T>
-    auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code>;
+    [[nodiscard]] auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code>;
 
     template<typename T>
-    auto read(std::span<const uint8_t>& input) -> std::expected<T, read_error_code>;
+    [[nodiscard]] auto read(std::span<const uint8_t>& input) -> std::expected<T, read_error_code>;
     
 }
 
@@ -647,13 +647,13 @@ namespace blopp
     }
 
     template<typename T>
-    auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code> {
+    [[nodiscard]] auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code> {
         auto span = std::span{ input };
         return read<T>(span);
     }
 
     template<typename T>
-    auto read(std::span<const uint8_t>& span) -> std::expected<T, read_error_code> {
+    [[nodiscard]] auto read(std::span<const uint8_t>& span) -> std::expected<T, read_error_code> {
         auto output = T{};
         auto context = impl::read_context{ span };
 
