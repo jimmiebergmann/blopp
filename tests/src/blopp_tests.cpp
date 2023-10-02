@@ -29,6 +29,7 @@ struct test_object_1 {
     test_object_empty object_empty_value;
     test_object_nested_2 object_nested_2_value;
     std::vector<test_object_empty> object_empty_vector;
+    std::list<test_object_empty> object_empty_list;
 };
 
 
@@ -74,7 +75,8 @@ struct blopp::object<test_object_1> {
             .map(value.string_value)
             .map(value.object_empty_value)
             .map(value.object_nested_2_value)
-            .map(value.object_empty_vector);
+            .map(value.object_empty_vector)
+            .map(value.object_empty_list);
     }
 };
 
@@ -94,7 +96,7 @@ TEST(blopp, write_read_bool) {
     }
 }
 
-TEST(blopp, write_read_int8_t) {
+TEST(blopp, write_read_int8) {
     {
         auto input_bytes = blopp::write(int8_t{ 127 });
         auto output_result = blopp::read<int8_t>(input_bytes);
@@ -109,7 +111,7 @@ TEST(blopp, write_read_int8_t) {
     }
 }
 
-TEST(blopp, write_read_int16_t) {
+TEST(blopp, write_read_int16) {
     {
         auto input_bytes = blopp::write(int16_t{ 1278 });
         auto output_result = blopp::read<int16_t>(input_bytes);
@@ -124,7 +126,7 @@ TEST(blopp, write_read_int16_t) {
     }
 }
 
-TEST(blopp, write_read_int32_t) {
+TEST(blopp, write_read_int32) {
     {
         auto input_bytes = blopp::write(int32_t{ 2345678 });
         auto output_result = blopp::read<int32_t>(input_bytes);
@@ -139,7 +141,7 @@ TEST(blopp, write_read_int32_t) {
     }
 }
 
-TEST(blopp, write_read_int64_t) {
+TEST(blopp, write_read_int64) {
     {
         auto input_bytes = blopp::write(int64_t{ 2345678901234LL });
         auto output_result = blopp::read<int64_t>(input_bytes);
@@ -154,7 +156,7 @@ TEST(blopp, write_read_int64_t) {
     }
 }
 
-TEST(blopp, write_read_uint8_t) {
+TEST(blopp, write_read_uint8) {
     {
         auto input_bytes = blopp::write(uint8_t{ 0 });
         auto output_result = blopp::read<uint8_t>(input_bytes);
@@ -169,7 +171,7 @@ TEST(blopp, write_read_uint8_t) {
     }
 }
 
-TEST(blopp, write_read_uint16_t) {
+TEST(blopp, write_read_uint16) {
     {
         auto input_bytes = blopp::write(uint16_t{ 0 });
         auto output_result = blopp::read<uint16_t>(input_bytes);
@@ -184,7 +186,7 @@ TEST(blopp, write_read_uint16_t) {
     }
 }
 
-TEST(blopp, write_read_uint32_t) {
+TEST(blopp, write_read_uint32) {
     {
         auto input_bytes = blopp::write(uint32_t{ 0 });
         auto output_result = blopp::read<uint32_t>(input_bytes);
@@ -199,7 +201,7 @@ TEST(blopp, write_read_uint32_t) {
     }
 }
 
-TEST(blopp, write_read_uint64_t) {
+TEST(blopp, write_read_uint64) {
     {
         auto input_bytes = blopp::write(uint64_t{ 0ULL });
         auto output_result = blopp::read<uint64_t>(input_bytes);
@@ -229,7 +231,7 @@ TEST(blopp, write_read_char) {
     }
 }
 
-TEST(blopp, write_read_char8_t) {
+TEST(blopp, write_read_char8) {
     {
         auto input_bytes = blopp::write(char8_t{ '\0' });
         auto output_result = blopp::read<char8_t>(input_bytes);
@@ -289,6 +291,23 @@ TEST(blopp, write_read_string) {
     }
 }
 
+TEST(blopp, write_read_unique_ptr) {
+    {
+        const auto input = std::unique_ptr<int32_t>{};
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<std::unique_ptr<int32_t>>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_FALSE(output_result.value());
+    }
+    {
+        const auto input = std::make_unique<int32_t>(123);
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<std::unique_ptr<int32_t>>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_EQ((*output_result.value()), int32_t{ 123 });
+    }  
+}
+
 TEST(blopp, write_read_test_object_empty) {
     const auto input = test_object_empty{};
     auto input_bytes = blopp::write(input);
@@ -318,7 +337,8 @@ TEST(blopp, write_read_test_object_1) {
                 .nested_value_2 = 2.0
             }
         },
-        .object_empty_vector = { {}, {}, {} }
+        .object_empty_vector = { {}, {}, {} },
+        .object_empty_list = { {}, {}, {} }
     };
 
     auto input_bytes = blopp::write(input);
@@ -347,5 +367,71 @@ TEST(blopp, write_read_test_object_1) {
         output.object_nested_2_value.object_nested_1_value.nested_value_2,
         input.object_nested_2_value.object_nested_1_value.nested_value_2);
     EXPECT_EQ(output.object_empty_vector.size(), input.object_empty_vector.size());
+    EXPECT_EQ(output.object_empty_list.size(), input.object_empty_list.size());
 }
 
+TEST(blopp, write_read_list_int32) {
+    const auto input = std::list<int32_t>{ 1337, -1337, 0, 123 };
+
+    auto input_bytes = blopp::write(input);
+    auto output_result = blopp::read<std::list<int32_t>>(input_bytes);
+    ASSERT_TRUE(output_result);
+
+    auto output = std::move(*output_result);
+
+    ASSERT_EQ(output.size(), size_t{ 4 });
+    EXPECT_EQ((*std::next(output.begin(), 0)), int32_t{ 1337 });
+    EXPECT_EQ((*std::next(output.begin(), 1)), int32_t{ -1337 });
+    EXPECT_EQ((*std::next(output.begin(), 2)), int32_t{ 0 });
+    EXPECT_EQ((*std::next(output.begin(), 3)), int32_t{ 123 });
+}
+
+TEST(blopp, write_read_vector_int32) {
+    const auto input = std::vector<int32_t>{ 1337, -1337, 0, 123 };
+
+    auto input_bytes = blopp::write(input);
+    auto output_result = blopp::read<std::vector<int32_t>>(input_bytes);
+    ASSERT_TRUE(output_result);
+
+    auto output = std::move(*output_result);
+    ASSERT_EQ(output.size(), size_t{ 4 });
+    EXPECT_EQ(output.at(0), int32_t{ 1337 });
+    EXPECT_EQ(output.at(1), int32_t{ -1337 });
+    EXPECT_EQ(output.at(2), int32_t{ 0 });
+    EXPECT_EQ(output.at(3), int32_t{ 123 });
+}
+
+TEST(blopp, write_read_vector_unique_ptr) {
+    auto input = std::vector<std::unique_ptr<int32_t>>{};
+    input.emplace_back(nullptr);
+    input.emplace_back(nullptr);
+    input.emplace_back(nullptr);
+
+    auto input_bytes = blopp::write(input);
+    auto output_result = blopp::read<std::vector<std::unique_ptr<int32_t>>>(input_bytes);
+    ASSERT_TRUE(output_result);
+
+    /*auto output = std::move(*output_result);
+    ASSERT_EQ(output.size(), size_t{ 4 });
+    EXPECT_EQ(output.at(0), int32_t{ 1337 });
+    EXPECT_EQ(output.at(1), int32_t{ -1337 });
+    EXPECT_EQ(output.at(2), int32_t{ 0 });
+    EXPECT_EQ(output.at(3), int32_t{ 123 });*/
+}
+
+/*TEST(blopp, write_read_unique_ptr2) {
+    {
+        const auto input = std::unique_ptr<int32_t>{};
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<std::unique_ptr<int32_t>>(input_bytes);
+        ASSERT_TRUE(output_result);
+        EXPECT_FALSE(output_result.value());
+    }
+    {
+        const auto input = std::make_unique<int32_t>(123);
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<std::unique_ptr<int32_t>>(input_bytes);
+        ASSERT_FALSE(output_result);
+        EXPECT_EQ((*output_result.value()), int32_t{ 123 });
+    }
+}*/

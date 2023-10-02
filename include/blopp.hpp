@@ -29,10 +29,10 @@
 #include <type_traits>
 #include <expected>
 #include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 #include <list>
-#include <map>
 #include <span>
 #include <stdint.h>
 #include <stddef.h>
@@ -70,24 +70,25 @@ namespace blopp {
 namespace blopp::impl {
 
     enum class data_types : uint8_t {
-        boolean = 0,
-        int8 = 1,
-        int16 = 2,
-        int32 = 3,
-        int64 = 4,
-        uint8 = 5,
-        uint16 = 6,
-        uint32 = 7,
-        uint64 = 8,
-        float32 = 9,
-        float64 = 10,
-        character = 11,
-        string = 12,
-        object = 13,
-        list = 14
+        null = 0,
+        boolean = 1,
+        character = 2,
+        int8 = 3,
+        int16 = 4,
+        int32 = 5,
+        int64 = 6,
+        uint8 = 7,
+        uint16 = 8,
+        uint32 = 9,
+        uint64 = 10,
+        float32 = 11,
+        float64 = 12,
+        string = 13,
+        object = 14,
+        list = 15
     };
 
-    static constexpr uint8_t data_types_count = 15;
+    static constexpr uint8_t data_types_count = 16;
 
     constexpr bool validate_data_type(const data_types data_type)
     {
@@ -152,7 +153,7 @@ namespace blopp::impl {
 
     template<typename T>
     constexpr auto object_is_mapped() -> bool {
-        return requires(T& value, dummy_context dummy) { { blopp::object<T>::map(dummy, value) }; };
+        return std::is_class_v<T> == true && requires(T& value, dummy_context dummy) { { blopp::object<T>::map(dummy, value) }; };
     }
 
     template<typename T>
@@ -168,6 +169,10 @@ namespace blopp::impl {
         }
         else if constexpr (std::is_same_v<T, std::string> == true) {
             return data_types::string;
+        }
+        else if constexpr (is_specialization_v<T, std::unique_ptr> == true) {
+            using element_t = typename T::element_type;
+            return get_data_type<element_t>();
         }
         else if constexpr (
             is_specialization_v<T, std::vector> == true ||
@@ -227,6 +232,7 @@ namespace blopp::impl {
         write_context& operator = (write_context&&) = delete;
 
         auto& map(auto& value) {
+            ++m_property_count;
             return map_impl<false>(value);
         }
 
@@ -242,6 +248,10 @@ namespace blopp::impl {
 
             const auto values_ptr = reinterpret_cast<const uint8_t*>(values.data());
             m_output.insert(m_output.end(), values_ptr, values_ptr + (sizeof(T) * values.size()));
+        }
+
+        inline void write_null() {
+            m_output.push_back(static_cast<uint8_t>(data_types::null));
         }
 
         template<bool VSkipDataType>
@@ -348,33 +358,37 @@ namespace blopp::impl {
             using value_t = std::decay_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
-            ++m_property_count;
-
             if constexpr (value_fundamental_traits::is_fundamental == true) {
                 write_fundamental<VSkipDataType>(value);
-                return *this;
             }
             else if constexpr (std::is_same_v<value_t, std::string> == true) {
                 write_string<VSkipDataType>(value);
-                return *this;
+            }
+            else if constexpr (is_specialization_v<value_t, std::unique_ptr> == true) {
+                if (value == nullptr) {
+                    write_null();
+                }
+                else {
+                    map_impl<VSkipDataType>(*value);
+                }
             }
             else if constexpr (
                 is_specialization_v<value_t, std::vector> == true ||
                 is_specialization_v<value_t, std::list> == true)
             {
                 write_list<VSkipDataType>(value);
-                return *this;
             }
             else if constexpr (
                 std::is_class_v<value_t> == true &&
                 object_is_mapped<value_t>() == true)
             {
                 write_object<VSkipDataType>(value);
-                return *this;
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp data type.");
             }
+
+            return *this;
         }
 
         std::vector<uint8_t>& m_output;
@@ -405,6 +419,7 @@ namespace blopp::impl {
             if (m_error.has_value()) {
                 return *this;
             }
+            ++m_property_count;
             return map_impl<false>(value);
         }
 
@@ -491,6 +506,30 @@ namespace blopp::impl {
 
             value.clear();
             read_input_container_values(value, string_size);
+
+            return {};
+        }
+
+        inline auto read_unique_ptr(auto& value) -> std::expected<void, read_error_code> {
+            using value_t = std::decay_t<decltype(value)>;
+            using element_t = typename value_t::element_type;
+            
+            if (!has_bytes_left(sizeof(data_types))) {
+                return std::unexpected(read_error_code::insufficient_data);
+            }
+
+            const auto data_type = read_input_value<data_types>();
+            if (data_type == data_types::null) {
+                value = nullptr;
+                return {};
+            }
+
+            value = std::make_unique<element_t>();
+            map_impl<true>(*value);
+        
+            if (m_error.has_value()) {
+                return std::unexpected(m_error.value());
+            }
 
             return {};
         }
@@ -589,19 +628,20 @@ namespace blopp::impl {
             using value_t = std::decay_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
-            ++m_property_count;
-
             if constexpr (value_fundamental_traits::is_fundamental == true) {
                 if (auto result = read_fundamental<VSkipDataType>(value); !result) {
                     m_error = result.error();
                 }
-                return *this;
             }
             else if constexpr (std::is_same_v<value_t, std::string> == true) {
                 if (auto result = read_string<VSkipDataType>(value); !result) {
                     m_error = result.error();
                 }
-                return *this;
+            }
+            else if constexpr (is_specialization_v<value_t, std::unique_ptr> == true) {
+                if (auto result = read_unique_ptr(value); !result) {
+                    m_error = result.error();
+                }
             }
             else if constexpr (
                 is_specialization_v<value_t, std::vector> == true ||
@@ -610,20 +650,18 @@ namespace blopp::impl {
                 if (auto result = read_list<VSkipDataType>(value); !result) {
                     m_error = result.error();
                 }
-                return *this;
             }
-            else if constexpr (
-                std::is_class_v<value_t> == true &&
-                object_is_mapped<value_t>() == true)
+            else if constexpr (object_is_mapped<value_t>() == true)
             {
                 if (auto result = read_object<VSkipDataType>(value); !result) {
                     m_error = result.error();
                 }
-                return *this;
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp data type.");
             }
+
+            return *this;
         }
 
         std::span<const uint8_t>& m_input;

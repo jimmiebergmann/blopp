@@ -16,6 +16,16 @@ or copy include/blopp.hpp to your project.
 - Cmake - Only for tests.
 - Conan - Only for tests.
 
+
+## Supported types
+* Fundamental data types, including 
+    `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
+    `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
+* User defined `struct` or `class`
+* `std::string`
+* `std::vector` and `std::list`
+* `std::unique_ptr`
+
 ## Example
 ``` cpp
 #include "blopp.hpp"
@@ -72,7 +82,7 @@ int main()
     };
     auto input_bytes = blopp::write(input);
     auto output_result = blopp::read<store>(input_bytes);
-    if(!output_result) { /* Error checking. */}
+    if(!output_result) { /* Error handling. */}
     auto output = *output_result;
 }
 ```
