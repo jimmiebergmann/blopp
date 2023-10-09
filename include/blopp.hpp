@@ -31,6 +31,7 @@
 #include <optional>
 #include <memory>
 #include <string>
+#include <array>
 #include <vector>
 #include <list>
 #include <span>
@@ -53,8 +54,9 @@ namespace blopp {
     [[nodiscard]] auto write(const T& value) -> std::vector<uint8_t>;
 
     enum class read_error_code {
+        insufficient_data,
         mismatching_type,
-        insufficient_data
+        mismatching_array_size
     };
 
     template<typename T>
@@ -89,6 +91,10 @@ namespace blopp::impl {
     };
 
     static constexpr uint8_t data_types_count = 16;
+
+    enum class element_flags : uint8_t {
+        data_type_per_element = 1
+    };
 
     constexpr bool validate_data_type(const data_types data_type)
     {
@@ -145,6 +151,18 @@ namespace blopp::impl {
     template<typename T, template<typename...> class TRef>
     static constexpr bool is_specialization_v = is_specialization<T, TRef>::value;
 
+    template<typename T>
+    struct is_std_array : std::false_type {};
+
+    template<typename T, size_t N>
+    struct is_std_array<std::array<T, N>> : std::true_type {};
+
+    template<typename T>
+    static constexpr bool is_std_array_v = is_std_array<T>::value;
+
+    template<typename T>
+    static constexpr bool is_std_vector_v = is_specialization_v<T, std::vector>;
+
     struct dummy_context {
         auto& map(auto&) { 
             return *this;
@@ -186,6 +204,18 @@ namespace blopp::impl {
         else {
             static_assert(always_false<T>, "Unmapped blopp data type.");
         }
+    }
+
+    constexpr data_types clean_element_flags(const data_types data_type) {
+       return static_cast<data_types>(static_cast<uint8_t>(data_type) & 0b00001111);
+    }
+
+    constexpr element_flags get_element_flags(const data_types data_type) {
+        return static_cast<element_flags>((static_cast<uint8_t>(data_type) & 0b11110000) >> 4);
+    }
+
+    constexpr void set_element_flags(data_types& data_type, const element_flags flags) {
+        data_type = static_cast<data_types>(static_cast<uint8_t>(data_type) | static_cast<uint8_t>(flags) << 4);
     }
 
 
@@ -245,7 +275,6 @@ namespace blopp::impl {
 
         template<typename T>
         inline void write_bytes(std::span<const T> values) {
-
             const auto values_ptr = reinterpret_cast<const uint8_t*>(values.data());
             m_output.insert(m_output.end(), values_ptr, values_ptr + (sizeof(T) * values.size()));
         }
@@ -256,7 +285,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType, typename T>
         inline void write_fundamental_value(const T& value) {
-            using value_t = std::decay_t<T>;
+            using value_t = std::remove_cvref_t<T>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
             if constexpr (VSkipDataType == false) {
@@ -275,7 +304,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType>
         inline void write_enum(const auto& value) {
-            using value_t = std::underlying_type_t<std::decay_t<decltype(value)>>;
+            using value_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
             write_fundamental_value<VSkipDataType, value_t>(static_cast<value_t>(value));
         }
 
@@ -295,9 +324,11 @@ namespace blopp::impl {
 
         template<bool VSkipDataType>
         inline void write_list(const auto& value) {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
+
+            constexpr auto element_is_unique_ptr = is_specialization_v<element_t, std::unique_ptr>;
 
             if constexpr (VSkipDataType == false) {
                 m_output.push_back(static_cast<uint8_t>(data_types::list));
@@ -307,19 +338,22 @@ namespace blopp::impl {
             const auto block_start_position = m_byte_count;
 
             auto block_size_writer = post_output_writer<size_t>{ m_output };
-
-            const auto element_data_type = get_data_type<element_t>();
+            
+            auto element_data_type = get_data_type<element_t>();
+            if constexpr (element_is_unique_ptr == true) {
+                set_element_flags(element_data_type, element_flags::data_type_per_element);
+            }     
             write_bytes(element_data_type);
 
-            const size_t element_count = value.size();
-            write_bytes(element_count);
+            const auto list_size = static_cast<size_t>(value.size());
+            write_bytes(list_size);
 
             m_byte_count += sizeof(size_t) + sizeof(data_types) + sizeof(size_t);
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if constexpr (
-                    std::is_same_v<element_t, bool> == false &&
-                    is_specialization_v<value_t, std::vector> == true)
+                    std::contiguous_iterator<typename value_t::iterator> &&
+                    (is_std_vector_v<value_t> == false || std::is_same_v< element_t, bool> == false))
                 {
                     write_bytes(std::span{ value });
                 }
@@ -328,21 +362,21 @@ namespace blopp::impl {
                         write_bytes(element_value);
                     }
                 }
-                m_byte_count += sizeof(element_t) * element_count;
+                m_byte_count += sizeof(element_t) * list_size;
             }
             else {
                 for (const auto& element_value : value) {
-                    map_impl<true>(element_value);
+                    map_impl<element_is_unique_ptr == false>(element_value);
                 }
             }
 
             const auto block_size = m_byte_count - block_start_position;
             block_size_writer.update(block_size);
-        };
-
+        }
+     
         template<bool VSkipDataType>
         inline void write_object(const auto& value) {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
 
             if constexpr (VSkipDataType == false) {
                 m_output.push_back(static_cast<uint8_t>(data_types::object));
@@ -366,7 +400,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType>
         inline auto& map_impl(auto& value) {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
             if constexpr (value_fundamental_traits::is_fundamental == true) {
@@ -387,7 +421,8 @@ namespace blopp::impl {
                 }
             }
             else if constexpr (
-                is_specialization_v<value_t, std::vector> == true ||
+                is_std_array_v<value_t> == true ||
+                is_std_vector_v<value_t> == true ||
                 is_specialization_v<value_t, std::list> == true)
             {
                 write_list<VSkipDataType>(value);
@@ -457,7 +492,7 @@ namespace blopp::impl {
         }
 
         inline void read_input_container_values(auto& container, const size_t count) {
-            using container_t = std::decay_t<decltype(container)>;
+            using container_t = std::remove_cvref_t<decltype(container)>;
             using element_t = typename container_t::value_type;
 
             const auto* input_element_begin = reinterpret_cast<const element_t*>(m_input.data());
@@ -472,7 +507,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType, typename T>
         inline auto read_fundamental_value(T& value) -> std::expected<void, read_error_code> {
-            using value_t = std::decay_t<T>;
+            using value_t = std::remove_cvref_t<T>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
             if constexpr (VSkipDataType == false) {
@@ -502,7 +537,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType>
         inline auto read_enum(auto& value) -> std::expected<void, read_error_code> {
-            using value_t = std::underlying_type_t<std::decay_t<decltype(value)>>;
+            using value_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
             return read_fundamental_value<VSkipDataType>(reinterpret_cast<value_t&>(value));
         }
 
@@ -536,7 +571,7 @@ namespace blopp::impl {
         }
 
         inline auto read_unique_ptr(auto& value) -> std::expected<void, read_error_code> {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::element_type;
             
             if (!has_bytes_left(sizeof(data_types))) {
@@ -561,7 +596,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType>
         inline auto read_list(auto& value) -> std::expected<void, read_error_code> {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
@@ -582,7 +617,8 @@ namespace blopp::impl {
 
             [[maybe_unused]] const auto object_size = read_input_value<size_t>();
             
-            const auto element_data_type = read_input_value<data_types>();
+            const auto element_data_type_raw = read_input_value<data_types>();
+            const auto element_data_type = clean_element_flags(element_data_type_raw);
             if (element_data_type != get_data_type< element_t>()) {
                 return std::unexpected(read_error_code::mismatching_type);
             }
@@ -612,7 +648,7 @@ namespace blopp::impl {
 
         template<bool VSkipDataType>
         inline auto read_object(auto& value) -> std::expected<void, read_error_code> {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
 
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
@@ -650,7 +686,7 @@ namespace blopp::impl {
         template<bool VSkipDataType>
         inline auto& map_impl(auto& value)
         {
-            using value_t = std::decay_t<decltype(value)>;
+            using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
             if constexpr (value_fundamental_traits::is_fundamental == true) {
