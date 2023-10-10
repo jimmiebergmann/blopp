@@ -19,10 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: apt install dependency
-        run: |
-          sudo apt-get -y install valgrind
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
         with:
