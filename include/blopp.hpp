@@ -330,8 +330,8 @@ namespace blopp::impl {
             m_output.insert(m_output.end(), value_ptr, value_ptr + sizeof(value));
         }
 
-        template<typename T>
-        inline void write_bytes(std::span<const T> values) {
+        template<typename T, size_t VExtent>
+        inline void write_bytes(std::span<const T, VExtent> values) {
             const auto values_ptr = reinterpret_cast<const uint8_t*>(values.data());
             m_output.insert(m_output.end(), values_ptr, values_ptr + (sizeof(T) * values.size()));
         }
@@ -557,6 +557,16 @@ namespace blopp::impl {
             return result;
         }
 
+        inline void read_input_array_values(auto& container, const size_t count) {
+            using container_t = std::remove_cvref_t<decltype(container)>;
+            using element_t = typename container_t::value_type;
+
+            auto* dest_element_ptr = reinterpret_cast<element_t*>(container.data());
+            const auto* src_element_ptr = reinterpret_cast<const element_t*>(m_input.data());
+            std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
+            m_input = m_input.subspan(count * sizeof(element_t));
+        }
+
         inline void read_input_container_values(auto& container, const size_t count) {
             using container_t = std::remove_cvref_t<decltype(container)>;
             using element_t = typename container_t::value_type;
@@ -719,7 +729,7 @@ namespace blopp::impl {
             }
 
             skip_input_bytes(sizeof(options_list_size_type));
-            
+
             const auto element_data_type_raw = read_input_value<data_types>();
             const auto element_data_type = clean_element_flags(element_data_type_raw);
             if (element_data_type != get_data_type<element_t>()) {
@@ -727,23 +737,44 @@ namespace blopp::impl {
             }
 
             const auto element_count = static_cast<size_t>(read_input_value<options_list_element_count_type>());
-    
+            if constexpr (is_std_array_v<value_t> == true) {
+                if (element_count != value.size()) {
+                    return std::unexpected(read_error_code::mismatching_array_size);
+                }
+            }
+
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if (!has_bytes_left(sizeof(element_t) * element_count)) {
                     return std::unexpected(read_error_code::insufficient_data);
                 }
 
-                value.clear();
-                read_input_container_values(value, element_count);
+                if constexpr (is_std_array_v<value_t> == true) {
+                    read_input_array_values(value, element_count);
+                }
+                else {
+                    value.clear();
+                    read_input_container_values(value, element_count);
+                }
             }
             else {
-                for (size_t i = 0; i < element_count; ++i) {
-                    auto& element_value = value.emplace_back();
-                    map_impl<true>(element_value);
-                    if (m_error.has_value()) {
-                        return std::unexpected(m_error.value());
+                if constexpr (is_std_array_v<value_t> == true) {
+                    for (size_t i = 0; i < element_count; ++i) {
+                        auto& element_value = value.at(i);
+                        map_impl<true>(element_value);
+                        if (m_error.has_value()) {
+                            return std::unexpected(m_error.value());
+                        }
                     }
                 }
+                else {
+                    for (size_t i = 0; i < element_count; ++i) {
+                        auto& element_value = value.emplace_back();
+                        map_impl<true>(element_value);
+                        if (m_error.has_value()) {
+                            return std::unexpected(m_error.value());
+                        }
+                    }
+                }           
             }
 
             return {};
@@ -776,6 +807,7 @@ namespace blopp::impl {
                 }
             }
             else if constexpr (
+                is_std_array_v<value_t> == true ||
                 is_specialization_v<value_t, std::vector> == true ||
                 is_specialization_v<value_t, std::list> == true)
             {

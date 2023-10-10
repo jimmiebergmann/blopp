@@ -11,6 +11,10 @@ enum class test_enum_2 : int32_t {
     b = 1337
 };
 
+struct test_uuid {
+    std::array<uint8_t, 16> data;
+};
+
 struct test_object_empty {
 };
 
@@ -41,6 +45,7 @@ struct test_object_1 {
     test_object_nested_2 object_nested_2_value;
     std::vector<test_object_empty> object_empty_vector;
     std::list<test_object_empty> object_empty_list;
+    std::array<int32_t, 5> array_int32;
 };
 
 
@@ -87,10 +92,26 @@ struct blopp::object<test_object_1> {
             .map(value.object_empty_value)
             .map(value.object_nested_2_value)
             .map(value.object_empty_vector)
-            .map(value.object_empty_list);
+            .map(value.object_empty_list)
+            .map(value.array_int32);
     }
 };
 
+TEST(blopp, mismatching_array_size) {
+    auto input = std::array<int32_t, 5>{}; 
+    auto input_bytes = blopp::write(input);
+
+    auto output_result_1 = blopp::read<std::array<int32_t, 5>>(input_bytes);
+    ASSERT_TRUE(output_result_1);
+
+    auto output_result_2 = blopp::read<std::array<int32_t, 4>>(input_bytes);
+    ASSERT_FALSE(output_result_2);
+    ASSERT_EQ(output_result_2.error(), blopp::read_error_code::mismatching_array_size);
+    
+    auto output_result_3 = blopp::read<std::array<int32_t, 6>>(input_bytes);
+    ASSERT_FALSE(output_result_3);
+    ASSERT_EQ(output_result_3.error(), blopp::read_error_code::mismatching_array_size);
+}
 
 TEST(blopp, write_read_bool) {
     {
@@ -465,6 +486,21 @@ TEST(blopp, write_read_vector_bool) {
     EXPECT_FALSE(output.at(3));
     EXPECT_FALSE(output.at(4));
     EXPECT_TRUE(output.at(5));
+}
+
+TEST(blopp, write_read_array_int32) {
+    auto input = std::array<int32_t, 5>{ 11, 22, 33, 44, 55};
+    auto input_bytes = blopp::write(input);
+
+    auto output_result = blopp::read<std::array<int32_t, 5>>(input_bytes);
+    ASSERT_TRUE(output_result);
+
+    auto output = std::move(*output_result);
+    EXPECT_EQ(output.at(0), int32_t{ 11 });
+    EXPECT_EQ(output.at(1), int32_t{ 22 });
+    EXPECT_EQ(output.at(2), int32_t{ 33 });
+    EXPECT_EQ(output.at(3), int32_t{ 44 });
+    EXPECT_EQ(output.at(4), int32_t{ 55 });
 }
 
 TEST(blopp, write_read_vector_int32) {
