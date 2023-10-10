@@ -23,7 +23,7 @@ or copy include/blopp.hpp to your project.
     `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
 * `enum`
 * `struct` or `class`
-* `std::string`, `std::vector`, `std::list`, `std::array`
+* `std::string`, `std::array`, `std::vector`, `std::list`
 * `std::unique_ptr`
 
 ## Example

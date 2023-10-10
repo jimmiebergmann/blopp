@@ -398,6 +398,42 @@ TEST(blopp, write_read_test_object_1) {
     EXPECT_EQ(output.object_empty_list.size(), input.object_empty_list.size());
 }
 
+TEST(blopp, write_read_test_object_1_compare_options) {
+    const auto input = test_object_1{
+        .bool_value = true,
+        .int8_value = 123,
+        .int16_value = 1'223,
+        .int32_value = 1'234'567'890,
+        .int64_value = 1'234'567'890'123LL,
+        .uint8_value = 223,
+        .uint16_value = 2'223,
+        .uint32_value = 2'234'567'890,
+        .uint64_value = 2'234'567'890'123ULL,
+        .char_value = 'A',
+        .float32_value = 1.25f,
+        .float64_value = 2.5,
+        .string_value = "The quick brown fox jumps over the lazy dog",
+        .object_empty_value = {},
+        .object_nested_2_value = test_object_nested_2{
+            .object_nested_1_value = test_object_nested_1{
+                .nested_value_1 = 1,
+                .nested_value_2 = 2.0
+            }
+        },
+        .object_empty_vector = { {}, {}, {} },
+        .object_empty_list = { {}, {}, {} }
+    };
+
+    auto input_bytes_1 = blopp::write<blopp::default_write_options>(input);
+    auto input_bytes_2 = blopp::write<blopp::compact_write_options>(input);
+    ASSERT_TRUE(input_bytes_1.size() > input_bytes_2.size());
+
+    auto output_result_1 = blopp::read<blopp::default_write_options, test_object_1>(input_bytes_1);
+    ASSERT_TRUE(output_result_1);
+    auto output_result_2 = blopp::read<blopp::compact_write_options, test_object_1>(input_bytes_2);
+    ASSERT_TRUE(output_result_2);
+}
+
 TEST(blopp, write_read_list_int32) {
     const auto input = std::list<int32_t>{ 1337, -1337, 0, 123 };
 

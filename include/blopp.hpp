@@ -42,16 +42,47 @@
 // Declarations
 namespace blopp {
 
-    template<typename T>
-    struct object;
-
-    enum class context_direction : uint8_t {
-        read,
-        write
+    struct default_binary_format_types {
+        using string_size_type = uint64_t;
+        using object_size_type = uint64_t;
+        using object_property_count_type = uint16_t;
+        using list_size_type = uint64_t;
+        using list_element_size_type = uint64_t;
+        using list_element_count_type = uint64_t;
     };
+
+    struct compact_binary_format_types {
+        using string_size_type = uint32_t;
+        using object_size_type = uint32_t;
+        using object_property_count_type = uint16_t;
+        using list_size_type = uint32_t;
+        using list_element_size_type = uint32_t;
+        using list_element_count_type = uint32_t;
+    };
+
+    struct default_write_options {
+        using binary_format_types = default_binary_format_types;
+    };
+
+    struct default_read_options {
+        using binary_format_types = default_binary_format_types;
+    };
+
+    struct compact_read_options {
+        using binary_format_types = compact_binary_format_types;
+    };
+
+    struct compact_write_options {
+        using binary_format_types = compact_binary_format_types;
+    };
+
 
     template<typename T>
     [[nodiscard]] auto write(const T& value) -> std::vector<uint8_t>;
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto write(const T& value) -> std::vector<uint8_t>;
+
 
     enum class read_error_code {
         insufficient_data,
@@ -59,12 +90,28 @@ namespace blopp {
         mismatching_array_size
     };
 
+
     template<typename T>
     [[nodiscard]] auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code>;
 
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code>;
+
+
     template<typename T>
     [[nodiscard]] auto read(std::span<const uint8_t>& input) -> std::expected<T, read_error_code>;
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(std::span<const uint8_t>& input) -> std::expected<T, read_error_code>;
     
+
+    template<typename T>
+    struct object;
+
+    enum class context_direction : uint8_t {
+        read,
+        write
+    };
 }
 
 
@@ -244,6 +291,8 @@ namespace blopp::impl {
     };
 
 
+
+    template<typename TOptions>
     class write_context {
 
     public:
@@ -267,6 +316,14 @@ namespace blopp::impl {
         }
 
     private:
+
+        using options = TOptions;
+        using options_string_size_type = typename options::binary_format_types::string_size_type;
+        using options_object_size_type = typename options::binary_format_types::object_size_type;
+        using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
+        using options_list_size_type = typename options::binary_format_types::list_size_type;
+        using options_list_element_size_type = typename options::binary_format_types::list_element_size_type;
+        using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
 
         inline void write_bytes(const auto& value) {
             const auto* value_ptr = reinterpret_cast<const uint8_t*>(&value);
@@ -315,11 +372,35 @@ namespace blopp::impl {
                 m_byte_count += sizeof(data_types);
             }
 
-            const auto value_size = value.size();
+            const auto value_size = static_cast<options_string_size_type>(value.size());
             write_bytes(value_size);
             m_output.insert(m_output.end(), value.begin(), value.end());
 
-            m_byte_count += sizeof(size_t) + value.size();
+            m_byte_count += sizeof(options_string_size_type) + value.size();
+        }
+     
+        template<bool VSkipDataType>
+        inline void write_object(const auto& value) {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+
+            if constexpr (VSkipDataType == false) {
+                m_output.push_back(static_cast<uint8_t>(data_types::object));
+                m_byte_count += sizeof(data_types);
+            }
+
+            const auto block_start_position = m_byte_count;         
+
+            auto block_size_writer = post_output_writer<options_object_size_type>{ m_output };
+            auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };
+            m_byte_count += sizeof(options_object_size_type) + sizeof(options_object_property_count_type);
+
+            auto object_write_context = write_context{ m_output };
+            object<value_t>::map(object_write_context, value);
+            m_byte_count += object_write_context.m_byte_count;
+
+            const auto block_size = static_cast<options_object_size_type>(m_byte_count - block_start_position);
+            block_size_writer.update(block_size);
+            property_count_writer.update(object_write_context.m_property_count);
         }
 
         template<bool VSkipDataType>
@@ -337,32 +418,32 @@ namespace blopp::impl {
 
             const auto block_start_position = m_byte_count;
 
-            auto block_size_writer = post_output_writer<size_t>{ m_output };
-            
+            auto block_size_writer = post_output_writer<options_list_size_type>{ m_output };
+
             auto element_data_type = get_data_type<element_t>();
             if constexpr (element_is_unique_ptr == true) {
                 set_element_flags(element_data_type, element_flags::data_type_per_element);
-            }     
+            }
             write_bytes(element_data_type);
 
-            const auto list_size = static_cast<size_t>(value.size());
-            write_bytes(list_size);
+            const auto element_count = static_cast<options_list_element_count_type>(value.size());
+            write_bytes(element_count);
 
-            m_byte_count += sizeof(size_t) + sizeof(data_types) + sizeof(size_t);
+            m_byte_count += sizeof(options_list_size_type) + sizeof(data_types) + sizeof(options_list_element_count_type);
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if constexpr (
                     std::contiguous_iterator<typename value_t::iterator> &&
-                    (is_std_vector_v<value_t> == false || std::is_same_v< element_t, bool> == false))
+                    (is_std_vector_v<value_t> == false || std::is_same_v<element_t, bool> == false))
                 {
                     write_bytes(std::span{ value });
                 }
                 else {
                     for (const auto element_value : value) {
-                        write_bytes(element_value);
+                        write_bytes(static_cast<const element_t>(element_value));
                     }
                 }
-                m_byte_count += sizeof(element_t) * list_size;
+                m_byte_count += sizeof(element_t) * value.size();
             }
             else {
                 for (const auto& element_value : value) {
@@ -370,32 +451,8 @@ namespace blopp::impl {
                 }
             }
 
-            const auto block_size = m_byte_count - block_start_position;
+            const auto block_size = static_cast<options_list_size_type>(m_byte_count - block_start_position);
             block_size_writer.update(block_size);
-        }
-     
-        template<bool VSkipDataType>
-        inline void write_object(const auto& value) {
-            using value_t = std::remove_cvref_t<decltype(value)>;
-
-            if constexpr (VSkipDataType == false) {
-                m_output.push_back(static_cast<uint8_t>(data_types::object));
-                m_byte_count += sizeof(data_types);
-            }
-
-            const auto block_start_position = m_byte_count;
-
-            auto block_size_writer = post_output_writer<size_t>{ m_output };
-            auto property_count_writer = post_output_writer<uint16_t>{ m_output };
-            m_byte_count += sizeof(size_t) + sizeof(uint16_t);
-
-            auto object_write_context = write_context{ m_output };
-            object<value_t>::map(object_write_context, value);
-            m_byte_count += object_write_context.m_byte_count;
-
-            const auto block_size = m_byte_count - block_start_position;
-            block_size_writer.update(block_size);
-            property_count_writer.update(object_write_context.m_property_count);
         }
 
         template<bool VSkipDataType>
@@ -442,11 +499,12 @@ namespace blopp::impl {
 
         std::vector<uint8_t>& m_output;
         size_t m_byte_count = 0;
-        uint16_t m_property_count = 0;
+        options_object_property_count_type m_property_count = 0;
 
     };
 
 
+    template<typename TOptions>
     class read_context {
 
     public:
@@ -477,6 +535,14 @@ namespace blopp::impl {
         }
 
     private:
+
+        using options = TOptions;
+        using options_string_size_type = typename options::binary_format_types::string_size_type;
+        using options_object_size_type = typename options::binary_format_types::object_size_type;
+        using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
+        using options_list_size_type = typename options::binary_format_types::list_size_type;
+        using options_list_element_size_type = typename options::binary_format_types::list_element_size_type;
+        using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
 
         inline bool has_bytes_left(const size_t count)
         {
@@ -554,11 +620,11 @@ namespace blopp::impl {
                 }
             }
             
-            if (!has_bytes_left(sizeof(size_t))) {
+            if (!has_bytes_left(sizeof(options_string_size_type))) {
                 return std::unexpected(read_error_code::insufficient_data);
             }
 
-            const auto string_size = read_input_value<size_t>();
+            const auto string_size = static_cast<size_t>(read_input_value<options_string_size_type>());
 
             if (!has_bytes_left(string_size)) {
                 return std::unexpected(read_error_code::insufficient_data);
@@ -595,6 +661,43 @@ namespace blopp::impl {
         }
 
         template<bool VSkipDataType>
+        inline auto read_object(auto& value) -> std::expected<void, read_error_code> {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+
+            if constexpr (VSkipDataType == false) {
+                if (!has_bytes_left(sizeof(data_types))) {
+                    return std::unexpected(read_error_code::insufficient_data);
+                }
+
+                const auto data_type = read_input_value<data_types>();
+                if (data_type != data_types::object) {
+                    return std::unexpected(read_error_code::mismatching_type);
+                }
+            }
+
+            if (!has_bytes_left(sizeof(options_object_size_type) + sizeof(options_object_property_count_type))) {
+                return std::unexpected(read_error_code::insufficient_data);
+            }
+
+            const auto max_object_size = m_input.size();
+            const auto object_size = static_cast<size_t>(read_input_value<options_object_size_type>());
+            if (object_size > max_object_size) {
+                return std::unexpected(read_error_code::insufficient_data);
+            }
+
+            skip_input_bytes(sizeof(options_object_property_count_type));
+
+            auto object_read_context = read_context{ m_input };
+            object<value_t>::map(object_read_context, value);
+
+            if (object_read_context.m_error) {
+                return std::unexpected(object_read_context.m_error.value());
+            }
+
+            return {};
+        }
+
+        template<bool VSkipDataType>
         inline auto read_list(auto& value) -> std::expected<void, read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
@@ -611,19 +714,19 @@ namespace blopp::impl {
                 }
             }
 
-            if (!has_bytes_left(sizeof(size_t) + sizeof(data_types) + sizeof(size_t))) {
+            if (!has_bytes_left(sizeof(options_list_size_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
                 return std::unexpected(read_error_code::insufficient_data);
             }
 
-            [[maybe_unused]] const auto object_size = read_input_value<size_t>();
+            skip_input_bytes(sizeof(options_list_size_type));
             
             const auto element_data_type_raw = read_input_value<data_types>();
             const auto element_data_type = clean_element_flags(element_data_type_raw);
-            if (element_data_type != get_data_type< element_t>()) {
+            if (element_data_type != get_data_type<element_t>()) {
                 return std::unexpected(read_error_code::mismatching_type);
             }
 
-            const auto element_count = read_input_value<size_t>();
+            const auto element_count = static_cast<size_t>(read_input_value<options_list_element_count_type>());
     
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if (!has_bytes_left(sizeof(element_t) * element_count)) {
@@ -641,43 +744,6 @@ namespace blopp::impl {
                         return std::unexpected(m_error.value());
                     }
                 }
-            }
-
-            return {};
-        }
-
-        template<bool VSkipDataType>
-        inline auto read_object(auto& value) -> std::expected<void, read_error_code> {
-            using value_t = std::remove_cvref_t<decltype(value)>;
-
-            if constexpr (VSkipDataType == false) {
-                if (!has_bytes_left(sizeof(data_types))) {
-                    return std::unexpected(read_error_code::insufficient_data);
-                }
-
-                const auto data_type = read_input_value<data_types>();
-                if (data_type != data_types::object) {
-                    return std::unexpected(read_error_code::mismatching_type);
-                }
-            }
-
-            if (!has_bytes_left(sizeof(size_t) + sizeof(uint16_t))) {
-                return std::unexpected(read_error_code::insufficient_data);
-            }
-            
-            const auto max_object_size = m_input.size();
-            const auto object_size = read_input_value<size_t>();
-            if (object_size > max_object_size) {
-                return std::unexpected(read_error_code::insufficient_data);
-            }
-
-            skip_input_bytes(sizeof(uint16_t));
-
-            auto object_read_context = read_context{ m_input };
-            object<value_t>::map(object_read_context, value);
-
-            if (object_read_context.m_error) {
-                return std::unexpected(object_read_context.m_error.value());
             }
 
             return {};
@@ -744,8 +810,13 @@ namespace blopp
 
     template<typename T>
     [[nodiscard]] auto write(const T& value) -> std::vector<uint8_t> {
+        return write<default_write_options, T>(value);
+    }
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto write(const T& value) -> std::vector<uint8_t> {
         auto result = std::vector<uint8_t>{};
-        auto context = impl::write_context{ result };
+        auto context = impl::write_context<TOptions>{ result };
         context.map(value);
         return result;
     }
@@ -753,13 +824,24 @@ namespace blopp
     template<typename T>
     [[nodiscard]] auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code> {
         auto span = std::span{ input };
-        return read<T>(span);
+        return read<default_read_options, T>(span);
+    }
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(const std::vector<uint8_t>& input) -> std::expected<T, read_error_code> {
+        auto span = std::span{ input };
+        return read<TOptions, T>(span);
     }
 
     template<typename T>
     [[nodiscard]] auto read(std::span<const uint8_t>& span) -> std::expected<T, read_error_code> {
+        return read<default_read_options, T>(span);
+    }
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(std::span<const uint8_t>& span) -> std::expected<T, read_error_code> {
         auto output = T{};
-        auto context = impl::read_context{ span };
+        auto context = impl::read_context<TOptions>{ span };
 
         context.map(output);
 
