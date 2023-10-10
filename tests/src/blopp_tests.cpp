@@ -387,7 +387,8 @@ TEST(blopp, write_read_test_object_1) {
             }
         },
         .object_empty_vector = { {}, {}, {} },
-        .object_empty_list = { {}, {}, {} }
+        .object_empty_list = { {}, {}, {} },
+        .array_int32 = { 1, 2, 3, 4, 5 }
     };
 
     auto input_bytes = blopp::write(input);
@@ -417,6 +418,7 @@ TEST(blopp, write_read_test_object_1) {
         input.object_nested_2_value.object_nested_1_value.nested_value_2);
     EXPECT_EQ(output.object_empty_vector.size(), input.object_empty_vector.size());
     EXPECT_EQ(output.object_empty_list.size(), input.object_empty_list.size());
+    EXPECT_EQ(output.array_int32, input.array_int32);
 }
 
 TEST(blopp, write_read_test_object_1_compare_options) {
@@ -442,7 +444,8 @@ TEST(blopp, write_read_test_object_1_compare_options) {
             }
         },
         .object_empty_vector = { {}, {}, {} },
-        .object_empty_list = { {}, {}, {} }
+        .object_empty_list = { {}, {}, {} },
+        .array_int32 = { 1, 2, 3, 4, 5 }
     };
 
     auto input_bytes_1 = blopp::write<blopp::default_write_options>(input);
@@ -489,7 +492,7 @@ TEST(blopp, write_read_vector_bool) {
 }
 
 TEST(blopp, write_read_array_int32) {
-    auto input = std::array<int32_t, 5>{ 11, 22, 33, 44, 55};
+    auto input = std::array<int32_t, 5>{ 11, 22, 33, 44, 55 };
     auto input_bytes = blopp::write(input);
 
     auto output_result = blopp::read<std::array<int32_t, 5>>(input_bytes);
@@ -534,4 +537,54 @@ TEST(blopp, write_read_vector_unique_ptr) {
     EXPECT_NE(output.at(1), nullptr);
     EXPECT_EQ((*output.at(1)), int32_t{ 123 });
     EXPECT_EQ(output.at(2), nullptr);
+}
+
+
+TEST(blopp, write_read_test_object_1_erase_inputs) {
+    const auto input = test_object_1{
+        .bool_value = true,
+        .int8_value = 123,
+        .int16_value = 1'223,
+        .int32_value = 1'234'567'890,
+        .int64_value = 1'234'567'890'123LL,
+        .uint8_value = 223,
+        .uint16_value = 2'223,
+        .uint32_value = 2'234'567'890,
+        .uint64_value = 2'234'567'890'123ULL,
+        .char_value = 'A',
+        .float32_value = 1.25f,
+        .float64_value = 2.5,
+        .string_value = "The quick brown fox jumps over the lazy dog",
+        .object_empty_value = {},
+        .object_nested_2_value = test_object_nested_2{
+            .object_nested_1_value = test_object_nested_1{
+                .nested_value_1 = 1,
+                .nested_value_2 = 2.0
+            }
+        },
+        .object_empty_vector = { {}, {}, {} },
+        .object_empty_list = { {}, {}, {} },
+        .array_int32 = { 1, 2, 3, 4, 5 }
+    };
+
+    {
+        auto input_bytes = blopp::write(input);
+        const auto input_size = input_bytes.size();
+
+        for (size_t i = 0; i < input_size; i++) {
+            input_bytes.erase(input_bytes.begin());
+            auto output_result = blopp::read<test_object_1>(input_bytes);
+            ASSERT_FALSE(output_result);
+        }
+    }
+    {
+        auto input_bytes = blopp::write(input);
+        const auto input_size = input_bytes.size();
+
+        for (size_t i = 0; i < input_size; i++) {
+            input_bytes.erase(input_bytes.cbegin());
+            auto output_result = blopp::read<test_object_1>(input_bytes);
+            ASSERT_FALSE(output_result);
+        }
+    }
 }
