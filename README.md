@@ -16,7 +16,6 @@ or copy include/blopp.hpp to your project.
 - Cmake - Only for tests.
 - Conan - Only for tests.
 
-
 ## Supported types
 * Fundamental data types, including 
     `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
@@ -40,6 +39,7 @@ struct product {
     uint32_t id;
     std::string name;
     double price;
+    units unit;
 };
 
 struct store {

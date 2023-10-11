@@ -39,7 +39,7 @@ struct blopp::object<store> {
     }
 };
 
-TEST(blopp_readme, main) {
+TEST(readme, main) {
     const auto input = store{
         .name = "Fruit store",
         .products = {
