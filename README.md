@@ -1,6 +1,6 @@
 # blopp
 ![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Workflow Status (master)](https://img.shields.io/github/workflow/status/jimmiebergmann/blopp/Build/master?label=Github&logo=Github) [![AppVeyor Status (master)](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
-Single header C++23 binary reader/writer.
+Single header C++23 binary data reader/writer.
 
 ## Installation
 ```
@@ -94,6 +94,34 @@ int main()
     auto output = *output_result;
 }
 ```
+
+
+## FAQ
+#### Why isn't c-style arrays supported? 
+Due to limitations of std::expected.
+
+#### How can I map my custom type without representing it as an object?
+Use `format` instead of `map` method in your object template specialization.  
+Here's an example:
+
+``` cpp
+struct vec3 {
+    float x, y, z;
+};
+
+template<>
+struct blopp::object<vec3> {
+    static auto format(auto& context, auto& value) {
+        return 
+            context.format(value.x) &&
+            context.format(value.y) &&
+            context.format(value.z);
+    }
+};
+```
+
+Writing this object will result in a file size of `15` bytes, compared to `26` if map method were used.  
+Format is great for small size objects, but is limited to fundamental and std::array data types only.
 
 ## Build tests
 ```
