@@ -27,6 +27,8 @@
 #define BLOPP_INCLUDE_BLOPP_HPP
 
 #include <type_traits>
+#include <algorithm>
+#include <iterator>
 #include <limits>
 #include <expected>
 #include <optional>
@@ -347,7 +349,7 @@ namespace blopp::impl {
         template<typename T>
         inline void write_fundamental_value(const T& value) {
             const auto* value_ptr = reinterpret_cast<const uint8_t*>(&value);
-            m_output.insert(m_output.end(), value_ptr, value_ptr + sizeof(value));
+            std::copy(value_ptr, value_ptr + sizeof(value), std::back_inserter(m_output));
             m_format_size += sizeof(value);
         }
 
@@ -356,7 +358,7 @@ namespace blopp::impl {
             using element_t = typename T::value_type;
             const auto container_ptr = reinterpret_cast<const uint8_t*>(container.data());
             const auto container_byte_count = sizeof(element_t) * container.size();
-            m_output.insert(m_output.end(), container_ptr, container_ptr + container_byte_count);
+            std::copy(container_ptr, container_ptr + container_byte_count, std::back_inserter(m_output));
             m_format_size += container_byte_count;
         }
 
@@ -434,13 +436,13 @@ namespace blopp::impl {
 
         inline void write_bytes(const auto& value) {
             const auto* value_ptr = reinterpret_cast<const uint8_t*>(&value);
-            m_output.insert(m_output.end(), value_ptr, value_ptr + sizeof(value));
+            std::copy(value_ptr, value_ptr + sizeof(value), std::back_inserter(m_output));
         }
 
         template<typename T, size_t VExtent>
         inline void write_bytes(std::span<const T, VExtent> values) {
             const auto values_ptr = reinterpret_cast<const uint8_t*>(values.data());
-            m_output.insert(m_output.end(), values_ptr, values_ptr + (sizeof(T) * values.size()));
+            std::copy(values_ptr, values_ptr + (sizeof(T) * values.size()), std::back_inserter(m_output));
         }
 
         inline void write_null() {
@@ -481,7 +483,7 @@ namespace blopp::impl {
 
             const auto value_size = static_cast<options_string_size_type>(value.size());
             write_bytes(value_size);
-            m_output.insert(m_output.end(), value.begin(), value.end());
+            std::copy(value.begin(), value.end(), std::back_inserter(m_output));
 
             m_byte_count += sizeof(options_string_size_type) + value.size();
         }
@@ -814,7 +816,7 @@ namespace blopp::impl {
 
             const auto* input_element_begin = reinterpret_cast<const element_t*>(m_input.data());
             const auto* input_element_end = input_element_begin + count;
-            container.insert(container.end(), input_element_begin, input_element_end);
+            std::copy(input_element_begin, input_element_end, std::back_inserter(container));
             m_input = m_input.subspan(count * sizeof(element_t));
         }
 
