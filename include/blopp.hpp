@@ -229,23 +229,23 @@ namespace blopp::impl {
     template<typename T>
     static constexpr bool is_std_vector_v = is_specialization_v<T, std::vector>;
 
+    struct dummy_read_write_context {
+        auto& map(auto&) { return *this; }
+    };
+
     template<typename T>
     constexpr auto object_is_mapped() -> bool {
-        struct dummy_read_write_context {
-            auto& map(auto&) { return *this; }
-        };
-
         return
             std::is_class_v<T> == true &&
             requires(T & value, dummy_read_write_context dummy) { { blopp::object<T>::map(dummy, value) }; };
     }
 
+    struct dummy_format_read_write_context {
+        auto format(auto&) { return true; }
+    };
+
     template<typename T>
     constexpr auto object_is_formatted() -> bool {
-        struct dummy_format_read_write_context {
-            auto format(auto&) { return true; }
-        };
-
         return
             std::is_class_v<T> == true &&
             requires(T & value, dummy_format_read_write_context dummy) { { blopp::object<T>::format(dummy, value) }; };
