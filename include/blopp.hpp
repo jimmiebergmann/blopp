@@ -586,7 +586,7 @@ namespace blopp::impl {
                 }
                 else {
                     for (const auto element_value : value) {
-                        m_byte_count += write_value(m_output, element_value);
+                        m_byte_count += write_value(m_output, static_cast<const element_t>(element_value));
                     }
                 }
             }
