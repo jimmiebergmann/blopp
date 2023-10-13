@@ -1,0 +1,41 @@
+name: Fuzz
+on: push
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+        matrix:
+          compiler:
+            - cc: clang-16
+              cxx: clang++-16
+          build_type: [Debug, Release]
+          include:
+            - build_type: Debug
+              output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: "16.0"
+
+      - name: Build
+        run: |
+          cd fuzz
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+          cmake --build . --config ${{matrix.build_type}}
+
+      - name: Fuzz
+        run: |
+          cd fuzz/bin
+          mkdir corpus
+          ./blopp_fuzz{{matrix.output_name_postfix}} corpus -max_total_time=100 -timeout=60
+
+ 

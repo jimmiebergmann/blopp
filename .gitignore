@@ -37,7 +37,7 @@
 *.tlog
 Valgrind*
 CppCheckResults*
-CmakeUserPresets.json
+CMakeUserPresets.json
 
 # Executables
 *.exe
