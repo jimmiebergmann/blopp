@@ -27,10 +27,18 @@ jobs:
           sudo apt-get -y install valgrind
 
       - name: Install LLVM and Clang
-        if: matrix.compiler.cc == 'clang-16'
+        if: 
+          matrix.compiler.cc == 'clang-16'
         uses: KyleMayes/install-llvm-action@v1
         with:
           version: "16.0"
+
+      - name: Set gcc env variables
+        if: 
+          matrix.compiler.cc == 'gcc-12'
+        run: |
+          echo "CC=${{ matrix.compiler.cc }}" >> "$GITHUB_ENV"
+          echo "CXX=${{ matrix.compiler.cxx }}" >> "$GITHUB_ENV"
 
       - name: Setup Conan
         run: |
@@ -44,9 +52,6 @@ jobs:
           cd build
           cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
-        env:
-          CC: ${{ matrix.compiler.cc }}
-          CXX: ${{ matrix.compiler.cxx }}
 
       - name: Test
         run: |
