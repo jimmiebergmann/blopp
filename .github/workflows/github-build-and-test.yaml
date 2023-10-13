@@ -11,6 +11,8 @@ jobs:
           compiler:
             - cc: gcc-12
               cxx: g++-12
+            - cc: clang-16
+              cxx: clang++-16
           build_type: [Debug, Release]
           include:
             - build_type: Debug
@@ -19,10 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: apt install dependency
+      - name: Install Valgrind
         run: |
           sudo apt-get update
           sudo apt-get -y install valgrind
+
+      - name: Install LLVM and Clang
+        if: matrix.compiler.cc == 'clang-16'
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: "16.0"
 
       - name: Setup Conan
         run: |
