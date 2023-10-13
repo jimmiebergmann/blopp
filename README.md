@@ -1,6 +1,6 @@
 # blopp
 ![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Workflow Status (master)](https://img.shields.io/github/workflow/status/jimmiebergmann/blopp/Build/master?label=Github&logo=Github) [![AppVeyor Status (master)](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
-Single header C++23 binary data reader/writer.
+Single header C++20 binary data reader/writer.
 
 ## Installation
 ```
@@ -9,7 +9,7 @@ or copy include/blopp.hpp to your project.
 ```
 
 ## Requirements
-- C++23 compiler, tested with:
+- C++20 compiler, tested with:
   - Windows: Visual Studio 2022 
   - Linux: gcc-12
   - Mac: clang-16
@@ -97,6 +97,9 @@ int main()
 
 
 ## FAQ
+#### Does `blopp::read` return `std::expected`?
+Yes, if your compiler supports it, else a small std::expected-like class called `result_wrapper` is returned.
+
 #### Why isn't c-style arrays supported? 
 Due to limitations of std::expected.
 

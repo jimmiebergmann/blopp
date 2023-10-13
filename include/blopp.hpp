@@ -26,11 +26,17 @@
 #ifndef BLOPP_INCLUDE_BLOPP_HPP
 #define BLOPP_INCLUDE_BLOPP_HPP
 
+//#define BLOPP_USE_RESULT_WRAPPER
+
+#if __has_include(<expected>) && !defined(BLOPP_USE_RESULT_WRAPPER)
+#include <expected>
+#endif
+
 #include <type_traits>
 #include <algorithm>
 #include <iterator>
 #include <limits>
-#include <expected>
+#include <variant>
 #include <optional>
 #include <memory>
 #include <string>
@@ -42,8 +48,48 @@
 #include <stddef.h>
 #include <cstring>
 
-// Declarations
+#if !defined(__cpp_lib_expected) || defined(BLOPP_USE_RESULT_WRAPPER)
+#define BLOPP_EXPECTED_IS_RESULT_WRAPPER
+#endif
+
 namespace blopp {
+
+#if defined(BLOPP_EXPECTED_IS_RESULT_WRAPPER)
+    template<typename TValue, typename TError>
+    class result_wrapper {
+    public:
+
+        template<typename T = TValue>
+        result_wrapper(const T& value) : m_variant(value) {}
+
+        template<typename T = TValue>
+        result_wrapper(T&& value) : m_variant(std::move(value)) {}
+
+        TValue& value() { return std::get<0>(m_variant); }
+        const TValue& value() const { return std::get<0>(m_variant); }
+
+        TValue& operator * () { return std::get<0>(m_variant); }
+        const TValue& operator * () const { return std::get<0>(m_variant); }
+        TValue* operator -> () { return &std::get<0>(m_variant); }
+        const TValue* operator -> () const { return &std::get<0>(m_variant); }
+
+        TError& error() { return std::get<1>(m_variant); }
+        const TError& error() const { return std::get<1>(m_variant); }
+
+        bool has_value() const noexcept { return m_variant.index() == 0; }
+        operator bool() const noexcept { return has_value(); }
+
+    private:
+
+        std::variant<TValue, TError> m_variant;
+    };
+
+    template<typename TValue, typename TError>
+    using expected = result_wrapper<TValue, TError>;
+#else
+    template<typename TValue, typename TError>
+    using expected = std::expected<TValue, TError>;
+#endif
 
     struct default_binary_format_types {
         using string_size_type = uint64_t;
@@ -110,19 +156,19 @@ namespace blopp {
     using read_input_type = std::vector<uint8_t>;
 
     template<typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> std::expected<T, read_error_code>;
+    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code>;
 
     template<typename TOptions, typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> std::expected<T, read_error_code>;
+    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code>;
 
 
     using read_span_input_type = std::span<const uint8_t>;
 
     template<typename T>
-    [[nodiscard]] auto read(read_span_input_type& input) -> std::expected<T, read_error_code>;
+    [[nodiscard]] auto read(read_span_input_type& input) -> expected<T, read_error_code>;
 
     template<typename TOptions, typename T>
-    [[nodiscard]] auto read(read_span_input_type& input) -> std::expected<T, read_error_code>;
+    [[nodiscard]] auto read(read_span_input_type& input) -> expected<T, read_error_code>;
     
 
     template<typename T>
@@ -814,23 +860,23 @@ namespace blopp::impl {
         }
 
         template<bool VSkipDataType, typename T>
-        inline auto read_fundamental_value(T& value) -> std::expected<void, read_error_code> {
+        inline auto read_fundamental_value(T& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<T>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
-                    return std::unexpected(read_error_code::insufficient_data);
+                    return read_error_code::insufficient_data;
                 }
 
                 const auto data_type = read_value<data_types>(m_input);
                 if (data_type != value_fundamental_traits::data_type) {
-                    return std::unexpected(read_error_code::mismatching_type);
+                    return read_error_code::mismatching_type;
                 }
             }
 
             if (!has_bytes_left(sizeof(value_t))) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             read_value(m_input, value);
@@ -839,37 +885,37 @@ namespace blopp::impl {
         }
 
         template<bool VSkipDataType>
-        inline auto read_fundamental(auto& value) -> std::expected<void, read_error_code> {
+        inline auto read_fundamental(auto& value) -> std::optional<read_error_code> {
             return read_fundamental_value<VSkipDataType>(value);
         }
 
         template<bool VSkipDataType>
-        inline auto read_enum(auto& value) -> std::expected<void, read_error_code> {
+        inline auto read_enum(auto& value) -> std::optional<read_error_code> {
             using value_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
             return read_fundamental_value<VSkipDataType>(reinterpret_cast<value_t&>(value));
         }
 
         template<bool VSkipDataType>
-        inline auto read_string(std::string& value) -> std::expected<void, read_error_code> {
+        inline auto read_string(std::string& value) -> std::optional<read_error_code> {
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
-                    return std::unexpected(read_error_code::insufficient_data);
+                    return read_error_code::insufficient_data;
                 }
 
                 const auto data_type = read_value<data_types>(m_input);
                 if (data_type != data_types::string) {
-                    return std::unexpected(read_error_code::mismatching_type);
+                    return read_error_code::mismatching_type;
                 }
             }
             
             if (!has_bytes_left(sizeof(options_string_size_type))) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             const auto string_size = static_cast<size_t>(read_value<options_string_size_type>(m_input));
 
             if (!has_bytes_left(string_size)) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             value.clear();
@@ -878,12 +924,12 @@ namespace blopp::impl {
             return {};
         }
 
-        inline auto read_unique_ptr(auto& value) -> std::expected<void, read_error_code> {
+        inline auto read_unique_ptr(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::element_type;
             
             if (!has_bytes_left(sizeof(data_types))) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             const auto data_type = read_value<data_types>(m_input);
@@ -896,35 +942,35 @@ namespace blopp::impl {
             map_impl<true>(*value);
         
             if (m_error.has_value()) {
-                return std::unexpected(m_error.value());
+                return m_error.value();
             }
 
             return {};
         }
 
         template<bool VSkipDataType>
-        inline auto read_object(auto& value) -> std::expected<void, read_error_code> {
+        inline auto read_object(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
-                    return std::unexpected(read_error_code::insufficient_data);
+                    return read_error_code::insufficient_data;
                 }
 
                 const auto data_type = read_value<data_types>(m_input);
                 if (data_type != data_types::object) {
-                    return std::unexpected(read_error_code::mismatching_type);
+                    return read_error_code::mismatching_type;
                 }
             }
 
             if (!has_bytes_left(sizeof(options_object_size_type) + sizeof(options_object_property_count_type))) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             const auto max_object_size = m_input.size();
             const auto object_size = static_cast<size_t>(read_value<options_object_size_type>(m_input));
             if (object_size > max_object_size) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             skip_input_bytes(sizeof(options_object_property_count_type));
@@ -933,31 +979,31 @@ namespace blopp::impl {
             object<value_t>::map(object_read_context, value);
 
             if (object_read_context.m_error) {
-                return std::unexpected(object_read_context.m_error.value());
+                return object_read_context.m_error.value();
             }
 
             return {};
         }
 
         template<bool VSkipDataType>
-        inline auto read_list(auto& value) -> std::expected<void, read_error_code> {
+        inline auto read_list(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
-                    return std::unexpected(read_error_code::insufficient_data);
+                    return read_error_code::insufficient_data;
                 }
 
                 const auto data_type = read_value<data_types>(m_input);
                 if (data_type != data_types::list) {
-                    return std::unexpected(read_error_code::mismatching_type);
+                    return read_error_code::mismatching_type;
                 }
             }
 
             if (!has_bytes_left(sizeof(options_list_size_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             skip_input_bytes(sizeof(options_list_size_type));
@@ -965,13 +1011,13 @@ namespace blopp::impl {
             const auto element_data_type_raw = read_value<data_types>(m_input);
             const auto element_data_type = clean_element_flags(element_data_type_raw);
             if (element_data_type != get_data_type<element_t>()) {
-                return std::unexpected(read_error_code::mismatching_type);
+                return read_error_code::mismatching_type;
             }
 
             const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>(m_input));
             if constexpr (is_std_array_v<value_t> == true) {
                 if (element_count != value.size()) {
-                    return std::unexpected(read_error_code::mismatching_array_size);
+                    return read_error_code::mismatching_array_size;
                 }
             }
 
@@ -979,7 +1025,7 @@ namespace blopp::impl {
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if (!has_bytes_left(sizeof(element_t) * element_count)) {
-                    return std::unexpected(read_error_code::insufficient_data);
+                    return read_error_code::insufficient_data;
                 }
 
                 read_contiguous_container(m_input, value, element_count);
@@ -989,7 +1035,7 @@ namespace blopp::impl {
                     auto& element_value = emplace_container(value, i);
                     map_impl<true>(element_value);
                     if (m_error.has_value()) {
-                        return std::unexpected(m_error.value());
+                        return m_error;
                     }
                 }
             }
@@ -998,38 +1044,34 @@ namespace blopp::impl {
         }
 
         template<bool VSkipDataType>
-        inline auto read_formatted(auto& value) -> std::expected<void, read_error_code> {
+        inline auto read_formatted(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
             if constexpr (VSkipDataType == false) {
                 if (!has_bytes_left(sizeof(data_types))) {
-                    return std::unexpected(read_error_code::insufficient_data);
+                    return read_error_code::insufficient_data;
                 }
 
                 const auto data_type = read_value<data_types>(m_input);
                 if (data_type != data_types::unspecified) {
-                    return std::unexpected(read_error_code::mismatching_type);
+                    return read_error_code::mismatching_type;
                 }
             }
 
             if (!has_bytes_left(sizeof(options_format_size_type))) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
             const auto object_size = static_cast<size_t>(read_value<options_format_size_type>(m_input));
             if (!has_bytes_left(object_size)) {
-                return std::unexpected(read_error_code::insufficient_data);
+                return read_error_code::insufficient_data;
             }
 
-            auto format_error = std::optional<read_error_code>{};
-            auto format_read_context = read_format_context<TOptions>{ m_input, format_error };
+            auto format_result = std::optional<read_error_code>{};
+            auto format_read_context = read_format_context<TOptions>{ m_input, format_result };
             object<value_t>::format(format_read_context, value);
-
-            if (format_error) {
-                return std::unexpected(format_error.value());
-            }
             
-            return {};
+            return format_result;
         }
 
         template<bool VSkipDataType>
@@ -1039,45 +1081,31 @@ namespace blopp::impl {
             using value_fundamental_traits = fundamental_traits<value_t>;
 
             if constexpr (value_fundamental_traits::is_fundamental == true) {
-                if (auto result = read_fundamental<VSkipDataType>(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_fundamental<VSkipDataType>(value);
             }
             else if constexpr (std::is_enum_v<value_t> == true) {
-                if (auto result = read_enum<VSkipDataType>(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_enum<VSkipDataType>(value);
             }
             else if constexpr (std::is_same_v<value_t, std::string> == true) {
-                if (auto result = read_string<VSkipDataType>(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_string<VSkipDataType>(value);
             }
             else if constexpr (is_specialization_v<value_t, std::unique_ptr> == true) {
-                if (auto result = read_unique_ptr(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_unique_ptr(value);
             }
             else if constexpr (
                 is_std_array_v<value_t> == true ||
                 is_specialization_v<value_t, std::vector> == true ||
                 is_specialization_v<value_t, std::list> == true)
             {
-                if (auto result = read_list<VSkipDataType>(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_list<VSkipDataType>(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true)
             {
-                if (auto result = read_object<VSkipDataType>(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_object<VSkipDataType>(value);
             }
             else if constexpr (object_is_formatted<value_t>() == true)
             {
-                if (auto result = read_formatted<VSkipDataType>(value); !result) {
-                    m_error = result.error();
-                }
+                m_error = read_formatted<VSkipDataType>(value);
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp data type.");
@@ -1112,32 +1140,37 @@ namespace blopp
     }
 
     template<typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> std::expected<T, read_error_code> {
+    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code> {
         auto span = std::span{ input };
         return read<default_read_options, T>(span);
     }
 
     template<typename TOptions, typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> std::expected<T, read_error_code> {
+    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code> {
         auto span = std::span{ input };
         return read<TOptions, T>(span);
     }
 
     template<typename T>
-    [[nodiscard]] auto read(read_span_input_type& span) -> std::expected<T, read_error_code> {
+    [[nodiscard]] auto read(read_span_input_type& span) -> expected<T, read_error_code> {
         return read<default_read_options, T>(span);
     }
 
     template<typename TOptions, typename T>
-    [[nodiscard]] auto read(read_span_input_type& span) -> std::expected<T, read_error_code> {
+    [[nodiscard]] auto read(read_span_input_type& span) -> expected<T, read_error_code> {
         auto output = T{};
         auto context = impl::read_context<TOptions>{ span };
 
         context.map(output);
 
         if (auto error = context.error(); error) {
+#if defined(BLOPP_EXPECTED_IS_RESULT_WRAPPER)
+            return expected<T, read_error_code>{error.value()};   
+#else
             return std::unexpected(error.value());
+#endif
         }
+
         return output;
     }
 
