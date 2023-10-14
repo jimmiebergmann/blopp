@@ -359,46 +359,6 @@ namespace blopp::impl {
         return container_byte_count;
     }
 
-    template<typename T>
-    inline T read_value(read_span_input_type& input) {
-        auto value = T{};
-        std::memcpy(&value, input.data(), sizeof(T));
-        input = input.subspan(sizeof(T));
-        return value;
-    }
-
-    template<typename T>
-    inline void read_value(read_span_input_type& input, T& value) {
-        std::memcpy(&value, input.data(), sizeof(T));
-        input = input.subspan(sizeof(T));
-    }
-
-    template<typename TContainer>
-    inline void read_contiguous_container(read_span_input_type& input, TContainer& container, const size_t count) {
-        using container_t = std::remove_cvref_t<decltype(container)>;
-        using element_t = typename container_t::value_type;
-
-        if(count == 0) {
-            return;
-        }
-
-        const auto* src_element_begin_ptr = reinterpret_cast<const element_t*>(input.data());
-        
-        if constexpr (is_std_array_v<container_t> == true) {
-            auto* dest_element_ptr = reinterpret_cast<element_t*>(container.data());
-            std::memcpy(dest_element_ptr, src_element_begin_ptr, count * sizeof(element_t));
-        }
-        else {
-            size_t old_container_size = container.size();
-            container.resize(old_container_size + count);
-
-            auto* dest_element_ptr = reinterpret_cast<element_t*>(container.data() + old_container_size);
-            std::memcpy(dest_element_ptr, src_element_begin_ptr, count * sizeof(element_t));
-        }        
-        
-        input = input.subspan(count * sizeof(element_t));
-    }
-
     template<typename TContainer>
     inline void clear_container([[maybe_unused]] TContainer& container) {
         using container_t = std::remove_cvref_t<decltype(container)>;
@@ -416,6 +376,61 @@ namespace blopp::impl {
         else {
             return container.emplace_back();
         }
+    }
+
+    template<typename T>
+    inline T read_value(read_span_input_type& input) {
+        auto value = T{};
+        std::memcpy(&value, input.data(), sizeof(T));
+        input = input.subspan(sizeof(T));
+        return value;
+    }
+
+    template<typename T>
+    inline void read_value(read_span_input_type& input, T& value) {
+        std::memcpy(&value, input.data(), sizeof(T));
+        input = input.subspan(sizeof(T));
+    }
+
+    template<typename TContainer>
+    inline void read_container(read_span_input_type& input, TContainer& container, const size_t count) {
+        using container_t = std::remove_cvref_t<decltype(container)>;
+        using element_t = typename container_t::value_type;
+
+        if(count == 0) {
+            return;
+        }
+
+        if constexpr (is_std_array_v<container_t> == true) {
+            const auto* src_element_ptr = input.data();
+            auto* dest_element_ptr = container.data();
+            std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
+        }
+        else if constexpr (std::contiguous_iterator<typename TContainer::iterator> == true) {
+            size_t old_container_size = container.size();
+            container.resize(old_container_size + count);
+
+            const auto* src_element_ptr = input.data();
+            auto* dest_element_ptr = container.data() + old_container_size;
+            std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
+        }
+        else {
+            auto* src_element_ptr = input.data();
+            for (size_t i = 0; i < count; ++i) {
+                auto element_value = element_t{};
+                std::memcpy(&element_value, src_element_ptr, sizeof(element_t));
+                container.push_back(element_value);
+
+
+                //container.emplace_back();
+                //[[maybe_unused]] element_t& element_value = container.back();
+                //auto* dest_element_ptr = static_cast<element_t*>(&element_value);
+                //std::memcpy(dest_element_ptr, src_element_ptr, sizeof(element_t));
+                src_element_ptr += sizeof(element_t);
+            }
+        }
+        
+        input = input.subspan(count * sizeof(element_t));
     }
 
 
@@ -631,9 +646,7 @@ namespace blopp::impl {
             m_byte_count += write_value(m_output, static_cast<options_list_element_count_type>(value.size()));
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
-                if constexpr (
-                    std::contiguous_iterator<typename value_t::iterator> &&
-                    (is_std_vector_v<value_t> == false || std::is_same_v<element_t, bool> == false))
+                if constexpr (std::contiguous_iterator<typename value_t::iterator> == true)
                 {
                     m_byte_count += write_contiguous_container(m_output, value);
                 }
@@ -811,7 +824,7 @@ namespace blopp::impl {
                         return false;
                     }
 
-                    read_contiguous_container(m_input, value, value.size());
+                    read_container(m_input, value, value.size());
                     return true;
                 }
                 else {
@@ -950,7 +963,7 @@ namespace blopp::impl {
             }
 
             value.clear();
-            read_contiguous_container(m_input, value, string_size);
+            read_container(m_input, value, string_size);
 
             return {};
         }
@@ -1059,7 +1072,7 @@ namespace blopp::impl {
                     return read_error_code::insufficient_data;
                 }
 
-                read_contiguous_container(m_input, value, element_count);
+                read_container(m_input, value, element_count);
             }
             else {
                 for (size_t i = 0; i < element_count; ++i) {
