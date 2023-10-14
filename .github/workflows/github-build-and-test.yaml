@@ -36,7 +36,7 @@ jobs:
           sudo add-apt-repository 'deb http://apt.llvm.org/focal llvm-toolchain-focal-16 main' -y
           sudo add-apt-repository ppa:ubuntu-toolchain-r/test
           sudo apt update
-          sudo apt install build-essential clang-16 valgrind
+          sudo apt install build-essential clang-16
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 90
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 90
 
@@ -60,6 +60,15 @@ jobs:
           CXX: ${{matrix.compiler.cxx}}
 
       - name: Test
+        if: 
+          matrix.compiler.cc == 'clang-16'
+        run: |
+          cd tests/bin
+          ./blopp_tests${{matrix.output_name_postfix}}
+
+      - name: Test with valgrind
+        if: 
+          matrix.compiler.cc == 'gcc-12'
         run: |
           cd tests/bin
           valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
