@@ -760,6 +760,18 @@ namespace blopp::impl {
             return m_input.size() >= count;
         }
 
+        template<typename T>
+        inline bool has_bytes_left(const size_t count)
+        {
+            constexpr auto max_count = std::numeric_limits<size_t>::max() / sizeof(T);
+           
+            if (count > max_count) {
+                return false;
+            }
+
+            return m_input.size() >= (count * sizeof(T));
+        }
+
         [[nodiscard]] bool format_impl(auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
@@ -786,7 +798,7 @@ namespace blopp::impl {
                     element_fundamental_traits::is_fundamental == true ||
                     std::is_enum_v<element_t> == true)
                 {
-                    if (!has_bytes_left(value.size() * sizeof(element_t)))
+                    if (!has_bytes_left<element_t>(value.size()))
                     {
                         m_error = read_error_code::format_insufficient_data;
                         return false;
@@ -853,6 +865,18 @@ namespace blopp::impl {
         inline bool has_bytes_left(const size_t count)
         {
             return m_input.size() >= count;
+        }
+
+        template<typename T>
+        inline bool has_bytes_left(const size_t count)
+        {
+            constexpr auto max_count = std::numeric_limits<size_t>::max() / sizeof(T);
+
+            if (count > max_count) {
+                return false;
+            }
+
+            return m_input.size() >= (count * sizeof(T));
         }
 
         inline void skip_input_bytes(const size_t byte_count) {
@@ -1024,7 +1048,7 @@ namespace blopp::impl {
             clear_container(value);
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
-                if (!has_bytes_left(sizeof(element_t) * element_count)) {
+                if (!has_bytes_left<element_t>(element_count)) {
                     return read_error_code::insufficient_data;
                 }
 
