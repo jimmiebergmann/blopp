@@ -20,9 +20,14 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v1
-        with:
-          version: "16.0"
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key 2>/dev/null | sudo apt-key add -
+          sudo add-apt-repository 'deb http://apt.llvm.org/focal llvm-toolchain-focal-16 main' -y
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt update
+          sudo apt install build-essential clang-16
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 90
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 90
 
       - name: Build
         run: |
@@ -31,6 +36,9 @@ jobs:
           cd build
           cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
           cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: ${{matrix.compiler.cc}}
+          CXX: ${{matrix.compiler.cxx}}
 
       - name: Fuzz
         run: |
