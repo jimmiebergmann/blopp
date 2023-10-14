@@ -378,6 +378,10 @@ namespace blopp::impl {
         using container_t = std::remove_cvref_t<decltype(container)>;
         using element_t = typename container_t::value_type;
 
+        if(count == 0) {
+            return;
+        }
+
         const auto* src_element_begin_ptr = reinterpret_cast<const element_t*>(input.data());
         
         if constexpr (is_std_array_v<container_t> == true) {
@@ -385,8 +389,11 @@ namespace blopp::impl {
             std::memcpy(dest_element_ptr, src_element_begin_ptr, count * sizeof(element_t));
         }
         else {
-            const auto* src_element_end_ptr = src_element_begin_ptr + count;
-            std::copy(src_element_begin_ptr, src_element_end_ptr, std::back_inserter(container));
+            size_t old_container_size = container.size();
+            container.resize(old_container_size + count);
+
+            auto* dest_element_ptr = reinterpret_cast<element_t*>(container.data() + old_container_size);
+            std::memcpy(dest_element_ptr, src_element_begin_ptr, count * sizeof(element_t));
         }        
         
         input = input.subspan(count * sizeof(element_t));
