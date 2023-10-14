@@ -126,7 +126,7 @@ namespace blopp {
     };
 
 
-    enum class write_error_code {
+    /*enum class write_error_code {
         string_size_overflow,
         object_size_overflow,
         object_property_count_overflow,
@@ -134,7 +134,7 @@ namespace blopp {
         list_element_count_overflow,
         format_failure,
         format_size_overflow
-    };
+    };*/
 
     enum class read_error_code {
         insufficient_data,
@@ -153,23 +153,26 @@ namespace blopp {
     [[nodiscard]] auto write(const T& value) -> write_result_type;
 
 
-    using read_input_type = std::vector<uint8_t>;
+    using read_input_type = std::span<const uint8_t>;
 
     template<typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code>;
+    struct read_result
+    {
+        using value_type = T;
 
-    template<typename TOptions, typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code>;
-
-
-    using read_span_input_type = std::span<const uint8_t>;
+        T value = {};
+        read_input_type remaining = {};
+    };
 
     template<typename T>
-    [[nodiscard]] auto read(read_span_input_type& input) -> expected<T, read_error_code>;
+    using read_result_type = expected<read_result<T>, read_error_code>;
+
+    template<typename T>
+    [[nodiscard]] auto read(read_input_type input) -> read_result_type<T>;
 
     template<typename TOptions, typename T>
-    [[nodiscard]] auto read(read_span_input_type& input) -> expected<T, read_error_code>;
-    
+    [[nodiscard]] auto read(read_input_type input) -> read_result_type<T>;
+
 
     template<typename T>
     struct object;
@@ -379,7 +382,7 @@ namespace blopp::impl {
     }
 
     template<typename T>
-    inline T read_value(read_span_input_type& input) {
+    inline T read_value(read_input_type& input) {
         auto value = T{};
         std::memcpy(&value, input.data(), sizeof(T));
         input = input.subspan(sizeof(T));
@@ -387,13 +390,13 @@ namespace blopp::impl {
     }
 
     template<typename T>
-    inline void read_value(read_span_input_type& input, T& value) {
+    inline void read_value(read_input_type& input, T& value) {
         std::memcpy(&value, input.data(), sizeof(T));
         input = input.subspan(sizeof(T));
     }
 
     template<typename TContainer>
-    inline void read_container(read_span_input_type& input, TContainer& container, const size_t count) {
+    inline void read_container(read_input_type& input, TContainer& container, const size_t count) {
         using container_t = std::remove_cvref_t<decltype(container)>;
         using element_t = typename container_t::value_type;
 
@@ -420,12 +423,6 @@ namespace blopp::impl {
                 auto element_value = element_t{};
                 std::memcpy(&element_value, src_element_ptr, sizeof(element_t));
                 container.push_back(element_value);
-
-
-                //container.emplace_back();
-                //[[maybe_unused]] element_t& element_value = container.back();
-                //auto* dest_element_ptr = static_cast<element_t*>(&element_value);
-                //std::memcpy(dest_element_ptr, src_element_ptr, sizeof(element_t));
                 src_element_ptr += sizeof(element_t);
             }
         }
@@ -743,19 +740,48 @@ namespace blopp::impl {
 
     };
 
+    class read_context_base {        
+
+    protected:
+
+        explicit read_context_base(read_input_type& input) :
+            m_input{ input }
+        {}
+
+        inline bool has_bytes_left(const size_t count)
+        {
+            return m_input.size() >= count;
+        }
+
+        template<typename T>
+        inline bool has_bytes_left(const size_t count)
+        {
+            constexpr auto max_count = std::numeric_limits<size_t>::max() / sizeof(T);
+
+            if (count > max_count) {
+                return false;
+            }
+
+            return m_input.size() >= (count * sizeof(T));
+        }
+        
+        read_input_type& m_input;
+
+    };
+
 
     template<typename TOptions>
-    class read_format_context {
+    class read_format_context: public read_context_base {
 
     public:
 
         static constexpr auto direction = context_direction::write;
 
         explicit read_format_context(
-            read_span_input_type& input,
+            read_input_type& input,
             std::optional<read_error_code>& error
         ) :
-            m_input{ input },
+            read_context_base{ input },
             m_error{ error }
         {}
 
@@ -774,23 +800,6 @@ namespace blopp::impl {
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
         static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
-
-        inline bool has_bytes_left(const size_t count)
-        {
-            return m_input.size() >= count;
-        }
-
-        template<typename T>
-        inline bool has_bytes_left(const size_t count)
-        {
-            constexpr auto max_count = std::numeric_limits<size_t>::max() / sizeof(T);
-           
-            if (count > max_count) {
-                return false;
-            }
-
-            return m_input.size() >= (count * sizeof(T));
-        }
 
         [[nodiscard]] bool format_impl(auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
@@ -836,23 +845,22 @@ namespace blopp::impl {
             }
         }
 
-        read_span_input_type& m_input;
         std::optional<read_error_code>& m_error;
 
     };
 
 
     template<typename TOptions>
-    class read_context {
+    class read_context : public read_context_base {
 
     public:
 
         static constexpr auto direction = context_direction::read;
 
         explicit read_context(
-            read_span_input_type& input
+            read_input_type& input
         ) :
-            m_input{ input }
+            read_context_base{ input }
         {} 
 
         read_context(const read_context&) = delete;
@@ -881,23 +889,6 @@ namespace blopp::impl {
         using options_list_size_type = typename options::binary_format_types::list_size_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
-
-        inline bool has_bytes_left(const size_t count)
-        {
-            return m_input.size() >= count;
-        }
-
-        template<typename T>
-        inline bool has_bytes_left(const size_t count)
-        {
-            constexpr auto max_count = std::numeric_limits<size_t>::max() / sizeof(T);
-
-            if (count > max_count) {
-                return false;
-            }
-
-            return m_input.size() >= (count * sizeof(T));
-        }
 
         inline void skip_input_bytes(const size_t byte_count) {
             m_input = m_input.subspan(byte_count);
@@ -1158,7 +1149,6 @@ namespace blopp::impl {
             return *this;
         }
 
-        read_span_input_type& m_input;
         uint16_t m_property_count = 0;
         std::optional<read_error_code> m_error;
 
@@ -1183,39 +1173,29 @@ namespace blopp
         return result;
     }
 
+
     template<typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code> {
-        auto span = std::span{ input };
-        return read<default_read_options, T>(span);
+    [[nodiscard]] auto read(read_input_type input) -> read_result_type<T> {
+        return read<default_read_options, T>(input);
     }
 
     template<typename TOptions, typename T>
-    [[nodiscard]] auto read(const read_input_type& input) -> expected<T, read_error_code> {
-        auto span = std::span{ input };
-        return read<TOptions, T>(span);
-    }
+    [[nodiscard]] auto read(read_input_type input) -> read_result_type<T> {
 
-    template<typename T>
-    [[nodiscard]] auto read(read_span_input_type& span) -> expected<T, read_error_code> {
-        return read<default_read_options, T>(span);
-    }
+        auto result = read_result<T>{};
+        auto context = impl::read_context<TOptions>{ input };
 
-    template<typename TOptions, typename T>
-    [[nodiscard]] auto read(read_span_input_type& span) -> expected<T, read_error_code> {
-        auto output = T{};
-        auto context = impl::read_context<TOptions>{ span };
-
-        context.map(output);
+        context.map(result.value);
 
         if (auto error = context.error(); error) {
 #if defined(BLOPP_EXPECTED_IS_RESULT_WRAPPER)
-            return expected<T, read_error_code>{error.value()};   
+            return read_result_type<T>{error.value()};
 #else
             return std::unexpected(error.value());
 #endif
         }
 
-        return output;
+        return result;
     }
 
 }

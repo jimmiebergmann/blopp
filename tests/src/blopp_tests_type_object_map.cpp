@@ -1,9 +1,5 @@
 #include "blopp_test.hpp"
 
-TEST(type_object_map, test) {
-
-}
-
 struct test_object_empty {
 };
 
@@ -87,14 +83,14 @@ struct blopp::object<test_object_1> {
 
 
 
-TEST(type_object_map, write_read_test_object_empty) {
+TEST(type_object_map, ok_test_object_empty) {
     const auto input = test_object_empty{};
     auto input_bytes = blopp::write(input);
     auto output_result = blopp::read<test_object_empty>(input_bytes);
     ASSERT_TRUE(output_result);
 }
 
-TEST(type_object_map, write_read_test_object_1) {
+TEST(type_object_map, ok_test_object_1) {
     const auto input = test_object_1{
         .bool_value = true,
         .int8_value = 123,
@@ -125,7 +121,7 @@ TEST(type_object_map, write_read_test_object_1) {
     auto output_result = blopp::read<test_object_1>(input_bytes);
     ASSERT_TRUE(output_result);
 
-    auto output = std::move(*output_result);
+    auto& output = output_result->value;
 
     EXPECT_EQ(output.bool_value, input.bool_value);
     EXPECT_EQ(output.int8_value, input.int8_value);
@@ -151,7 +147,7 @@ TEST(type_object_map, write_read_test_object_1) {
     EXPECT_EQ(output.array_int32, input.array_int32);
 }
 
-TEST(type_object_map, write_read_test_object_1_compare_options) {
+TEST(type_object_map, ok_test_object_1_compare_options) {
     const auto input = test_object_1{
         .bool_value = true,
         .int8_value = 123,
@@ -188,7 +184,7 @@ TEST(type_object_map, write_read_test_object_1_compare_options) {
     ASSERT_TRUE(output_result_2);
 }
 
-TEST(type_object_map, write_read_test_object_1_erase_inputs) {
+TEST(type_object_map, fail_test_object_1_erase_inputs) {
     const auto input = test_object_1{
         .bool_value = true,
         .int8_value = 123,

@@ -61,7 +61,7 @@ TEST(readme, main) {
     auto output_result = blopp::read<store>(input_bytes);
     ASSERT_TRUE(output_result);
 
-    const auto& output = output_result.value();
+    auto& output = output_result->value;
 
     EXPECT_STREQ(output.name.c_str(), "Fruit store");
     ASSERT_EQ(output.products.size(), size_t{ 2 });

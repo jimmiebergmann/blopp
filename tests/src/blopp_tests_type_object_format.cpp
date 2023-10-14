@@ -90,7 +90,7 @@ struct blopp::object<fundamental_test_1> {
 };
 
 
-TEST(type_object_format, fundamental_test_1) {
+TEST(type_object_format, ok_fundamental_members) {
 
     const auto input = fundamental_test_1{
         .value_bool = true,
@@ -103,13 +103,13 @@ TEST(type_object_format, fundamental_test_1) {
     auto output_result = blopp::read<fundamental_test_1>(input_bytes);
     ASSERT_TRUE(output_result);
 
-    auto output = std::move(*output_result);
+    auto& output = output_result->value;
     EXPECT_EQ(output.value_bool, input.value_bool);
     EXPECT_EQ(output.value_int, input.value_int);
     EXPECT_EQ(output.value_enum, input.value_enum);
 }
 
-TEST(type_object_format, compare_map_and_format_size) {
+TEST(type_object_format, ok_compare_map_and_format_size) {
     const auto input_1 = vec3_1{ 1.0f, 2.0f, 3.0f };
     const auto input_2 = vec3_2{ 1.0f, 2.0f, 3.0f };
 
@@ -120,7 +120,7 @@ TEST(type_object_format, compare_map_and_format_size) {
     EXPECT_EQ(input_bytes_2.size(), size_t{ 26 });
 }
 
-TEST(type_object_format, array_uint8_test_1) {
+TEST(type_object_format, ok_array_uint8_members) {
 
     const auto input = array_uint8_test_1{
         .low = { 1, 2, 3, 4, 5, 6, 7, 8 },
@@ -132,13 +132,13 @@ TEST(type_object_format, array_uint8_test_1) {
     auto output_result = blopp::read<array_uint8_test_1>(input_bytes);
     ASSERT_TRUE(output_result);
 
-    auto output = std::move(*output_result);
+    auto& output = output_result->value;
     EXPECT_EQ(output.low, input.low);
     EXPECT_EQ(output.high, input.high);
 }
 
 
-TEST(type_object_format, array_enum_test_1) {
+TEST(type_object_format, ok_array_enum_members_1) {
     const auto input = array_enum_test_1{
         .data_2 = { enum_test_1::a, enum_test_1::b },
         .data_4 = { enum_test_1::c, enum_test_1::a, enum_test_1::c, enum_test_1::b }
@@ -150,13 +150,13 @@ TEST(type_object_format, array_enum_test_1) {
     auto output_result = blopp::read<array_enum_test_1>(input_bytes);
     ASSERT_TRUE(output_result);
 
-    auto output = std::move(*output_result);
+    auto& output = output_result->value;
     EXPECT_EQ(output.data_2, input.data_2);
     EXPECT_EQ(output.data_4, input.data_4);
 }
 
 
-TEST(type_object_format, array_enum_test_2) {
+TEST(type_object_format, ok_array_enum_members_2) {
     const auto input = array_enum_test_2{
         .data_2 = { enum_test_2::a, enum_test_2::b },
         .data_3 = { enum_test_2::c, enum_test_2::a, enum_test_2::c }
@@ -168,7 +168,7 @@ TEST(type_object_format, array_enum_test_2) {
     auto output_result = blopp::read<array_enum_test_2>(input_bytes);
     ASSERT_TRUE(output_result);
 
-    auto output = std::move(*output_result);
+    auto& output = output_result->value;
     EXPECT_EQ(output.data_2, input.data_2);
     EXPECT_EQ(output.data_3, input.data_3);
 }

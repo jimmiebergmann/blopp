@@ -71,7 +71,7 @@ struct blopp::object<store> {
 // Write and read your data structures.
 int main()
 {
-    const auto input = store{
+    const auto input_value = store{
         .name = "Fruit store",
         .products = {
             {
@@ -88,10 +88,13 @@ int main()
             }
         }
     };
-    auto input_bytes = blopp::write(input);
+
+    auto input_bytes = blopp::write(input_value);
+
     auto output_result = blopp::read<store>(input_bytes);
     if(!output_result) { /* Error handling. */}
-    auto output = *output_result;
+
+    auto& output_value = output_result->value;
 }
 ```
 
