@@ -21,29 +21,32 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Valgrind
+      - name: Install GCC packages
+        if: 
+          matrix.compiler.cc == 'gcc-12'
         run: |
           sudo apt-get update
           sudo apt-get -y install valgrind
 
-      - name: Install LLVM and Clang
+      - name: Install Clang packages
         if: 
           matrix.compiler.cc == 'clang-16'
-        uses: KyleMayes/install-llvm-action@v1
-        with:
-          version: "16.0"
-
-      - name: Set gcc env variables
-        if: 
-          matrix.compiler.cc == 'gcc-12'
         run: |
-          echo "CC=${{ matrix.compiler.cc }}" >> "$GITHUB_ENV"
-          echo "CXX=${{ matrix.compiler.cxx }}" >> "$GITHUB_ENV"
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key 2>/dev/null | sudo apt-key add -
+          sudo add-apt-repository 'deb http://apt.llvm.org/focal llvm-toolchain-focal-16 main' -y
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt update
+          sudo apt install build-essential clang-16 valgrind
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 90
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 90
 
       - name: Setup Conan
         run: |
           pip3 install conan --upgrade
-          conan profile detect --force 
+          conan profile detect --force
+        env:
+          CC: ${{matrix.compiler.cc}}
+          CXX: ${{matrix.compiler.cxx}}
 
       - name: Build
         run: |
@@ -52,6 +55,9 @@ jobs:
           cd build
           cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: ${{matrix.compiler.cc}}
+          CXX: ${{matrix.compiler.cxx}}
 
       - name: Test
         run: |
