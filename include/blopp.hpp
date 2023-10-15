@@ -44,6 +44,7 @@
 #include <vector>
 #include <list>
 #include <span>
+#include <tuple>
 #include <stdint.h>
 #include <stddef.h>
 #include <cstring>
@@ -109,20 +110,16 @@ namespace blopp {
         using format_size_type = uint8_t;
     };
 
-    struct default_write_options {
+    struct default_options {
         using binary_format_types = default_binary_format_types;
+        static constexpr auto allow_more_object_members = false;
+        static constexpr auto allow_less_object_members = false;
     };
 
-    struct default_read_options {
-        using binary_format_types = default_binary_format_types;
-    };
-
-    struct compact_read_options {
+    struct compact_default_options {
         using binary_format_types = compact_binary_format_types;
-    };
-
-    struct compact_write_options {
-        using binary_format_types = compact_binary_format_types;
+        static constexpr auto allow_more_object_members = false;
+        static constexpr auto allow_less_object_members = false;
     };
 
 
@@ -139,7 +136,9 @@ namespace blopp {
     enum class read_error_code {
         insufficient_data,
         mismatching_type,
+        mismatching_nullable,
         mismatching_array_size,
+        mismatching_object_property_count,
         format_insufficient_data
     };
 
@@ -192,30 +191,22 @@ namespace blopp::impl {
 
     enum class data_types : uint8_t {
         unspecified = 0,
-        null = 1,
-        boolean = 2,
-        character = 3,
-        int8 = 4,
-        int16 = 5,
-        int32 = 6,
-        int64 = 7,
-        uint8 = 8,
-        uint16 = 9,
-        uint32 = 10,
-        uint64 = 11,
-        float32 = 12,
-        float64 = 13,
-        string = 14,
-        object = 15,
-        list = 16
+        boolean = 1,
+        character = 2,
+        int8 = 3,
+        int16 = 4,
+        int32 = 5,
+        int64 = 6,
+        uint8 = 7,
+        uint16 = 8,
+        uint32 = 9,
+        uint64 = 10,
+        float32 = 11,
+        float64 = 12,
+        string = 13,
+        object = 14,
+        list = 15
     };
-
-    static constexpr uint8_t data_types_count = 16;
-
-    constexpr bool validate_data_type(const data_types data_type)
-    {
-        return static_cast<uint8_t>(data_type) < data_types_count;
-    }
 
 
     template<data_types Vdata_type>
@@ -257,14 +248,19 @@ namespace blopp::impl {
     struct fundamental_traits<double> : fundamental_traits_base< data_types::float64> {};
 
 
-    template<typename T, template<typename...> class TRef>
+    template<typename T, template<typename...> typename TRef>
     struct is_specialization : std::false_type {};
 
     template<template<typename...> class TRef, typename... TArgs>
     struct is_specialization<TRef<TArgs...>, TRef> : std::true_type {};
 
-    template<typename T, template<typename...> class TRef>
+    template<typename T, template<typename...> typename TRef>
     static constexpr bool is_specialization_v = is_specialization<T, TRef>::value;
+
+    template<typename T>
+    static constexpr bool is_nullable_v = 
+        is_specialization_v<T, std::unique_ptr> || 
+        is_specialization_v<T, std::optional>;
 
     template<typename T>
     struct is_std_array : std::false_type {};
@@ -277,6 +273,18 @@ namespace blopp::impl {
 
     template<typename T>
     static constexpr bool is_std_vector_v = is_specialization_v<T, std::vector>;
+
+    template<typename T>
+    static constexpr bool is_std_list_v = is_specialization_v<T, std::list>;
+
+    template<typename T>
+    static constexpr bool is_std_string_v = std::is_same_v<T, std::string>;
+
+    template<typename T>
+    static constexpr bool is_std_unique_ptr_v = is_specialization_v<T, std::unique_ptr>;
+
+    template<typename T>
+    static constexpr bool is_std_optional_v = is_specialization_v<T, std::optional>;
 
     struct dummy_read_write_context {
         auto& map(auto&) { return *this; }
@@ -307,59 +315,83 @@ namespace blopp::impl {
         if constexpr (value_fundamental_traits::is_fundamental == true) {
             return value_fundamental_traits::data_type;
         }
+        else if constexpr (std::is_enum_v<T> == true) {
+            using underlying_t = std::underlying_type_t<T>;
+            using underlying_fundamental_traits = fundamental_traits<underlying_t>;
+            return underlying_fundamental_traits::data_type;
+        }
         else if constexpr (std::is_same_v<T, std::string> == true) {
             return data_types::string;
         }
-        else if constexpr (is_specialization_v<T, std::unique_ptr> == true) {
+        else if constexpr (is_std_unique_ptr_v<T> == true) {
             using element_t = typename T::element_type;
             return get_data_type<element_t>();
         }
+        else if constexpr (is_std_optional_v<T> == true) {
+            using element_t = typename T::value_type;
+            return get_data_type<element_t>();
+        }
         else if constexpr (
-            is_specialization_v<T, std::vector> == true ||
-            is_specialization_v<T, std::list> == true)
+            is_std_array_v<T> == true ||
+            is_std_vector_v<T> == true ||
+            is_std_list_v<T> == true)
         {
             return data_types::list;
         }
         else if constexpr (std::is_class_v<T> == true && object_is_mapped<T>() == true) {
             return data_types::object;
         }
+        else if constexpr (std::is_class_v<T> == true && object_is_formatted<T>() == true) {
+            return data_types::unspecified;
+        }
         else {
             static_assert(always_false<T>, "Unmapped blopp data type.");
         }
     }
 
-
-    enum class element_flags : uint8_t {
-        data_type_per_element = 1
-    };
-
-    constexpr data_types clean_element_flags(const data_types data_type) {
-       return static_cast<data_types>(static_cast<uint8_t>(data_type) & 0b00011111);
+    template<bool Vis_nullable>
+    inline void write_data_type(write_result_type& output, data_types data_type) {      
+        auto value = static_cast<uint8_t>(data_type);
+        if constexpr (Vis_nullable == true) {
+            value = static_cast<uint8_t>(value | 0b10000000);
+        }
+        output.push_back(value);
     }
 
-    constexpr element_flags get_element_flags(const data_types data_type) {
-        return static_cast<element_flags>((static_cast<uint8_t>(data_type) & 0b11100000) >> 5);
+    inline void write_nullable_has_value(write_result_type& output, const bool has_value) {
+        output.push_back(has_value);
     }
-
-    constexpr void set_element_flags(data_types& data_type, const element_flags flags) {
-        data_type = static_cast<data_types>(static_cast<uint8_t>(data_type) | static_cast<uint8_t>(flags) << 5);
-    }
-
 
     template<typename TValue>
-    inline size_t write_value(write_result_type& output, const TValue& value) {
+    inline void write_value(write_result_type& output, const TValue& value) {
         const auto* value_ptr = reinterpret_cast<const uint8_t*>(&value);
         std::copy(value_ptr, value_ptr + sizeof(value), std::back_inserter(output));
-        return sizeof(value);
     }
 
     template<typename TContainer>
-    inline size_t write_contiguous_container(write_result_type& output, const TContainer& container) {
+    inline void write_contiguous_container(write_result_type& output, const TContainer& container) {
         using element_t = typename TContainer::value_type;
         const auto container_ptr = reinterpret_cast<const uint8_t*>(container.data());
         const auto container_byte_count = sizeof(element_t) * container.size();
         std::copy(container_ptr, container_ptr + container_byte_count, std::back_inserter(output));
-        return container_byte_count;
+    }
+
+    template<typename TValue>
+    inline bool nullable_has_value([[maybe_unused]] const TValue& value) {
+        if constexpr (is_std_unique_ptr_v<TValue> == true) {
+            return value != nullptr;
+        }
+        else if constexpr (is_std_optional_v<TValue> == true) {
+            return value.has_value();
+        }
+        else {
+            static_assert(always_false<TValue>, "Unmapped blopp nullable value.");
+        }
+    }
+
+    template<typename T>
+    inline void clear_nullable_value(T& value) {
+        value.reset();
     }
 
     template<typename TContainer>
@@ -379,6 +411,26 @@ namespace blopp::impl {
         else {
             return container.emplace_back();
         }
+    }
+
+    inline data_types read_data_type(read_input_type& input) {
+        auto next_byte_without_flag = static_cast<uint8_t>(*input.data() & 0b01111111);
+        input = input.subspan(sizeof(uint8_t));
+        return static_cast<data_types>(next_byte_without_flag);
+    }
+
+    inline bool read_nullable_has_value(read_input_type& input) {
+        auto value = static_cast<bool>(*input.data());
+        input = input.subspan(sizeof(bool));
+        return value;
+    }
+
+    inline std::pair<data_types, bool> read_data_type_with_nullable_flag(read_input_type& input) {
+        auto next_byte = *input.data();
+        auto next_byte_without_flag = static_cast<uint8_t>(next_byte & 0b01111111);
+        auto flag = static_cast<bool>(next_byte & 0b10000000);
+        input = input.subspan(sizeof(uint8_t));
+        return { static_cast<data_types>(next_byte_without_flag), flag };
     }
 
     template<typename T>
@@ -544,7 +596,8 @@ namespace blopp::impl {
 
         auto& map(auto& value) {
             ++m_property_count;
-            return map_impl<false>(value);
+            map_impl<false>(value);
+            return *this;
         }
 
     private:
@@ -557,185 +610,146 @@ namespace blopp::impl {
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
-        inline void write_null() {
-            m_byte_count += write_value(m_output, static_cast<uint8_t>(data_types::null));
-        }
-
-        template<bool VSkipDataType, typename T>
-        inline void write_fundamental_value(const T& value) {
-            using value_t = std::remove_cvref_t<T>;
-            using value_fundamental_traits = fundamental_traits<value_t>;
-
-            if constexpr (VSkipDataType == false) {
-                m_byte_count += write_value(m_output, static_cast<uint8_t>(value_fundamental_traits::data_type));
-            }
-
-            m_byte_count += write_value(m_output, value);
-        }
-
-        template<bool VSkipDataType>
         inline void write_fundamental(const auto& value) {
-            write_fundamental_value<VSkipDataType>(value);
+            write_value(m_output, value);
         }
 
-        template<bool VSkipDataType>
         inline void write_enum(const auto& value) {
-            using value_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
-            write_fundamental_value<VSkipDataType, value_t>(static_cast<value_t>(value));
+            using underlying_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
+            write_value(m_output, static_cast<underlying_t>(value));
         }
 
-        template<bool VSkipDataType>
         inline void write_string(const auto& value) {
-            if constexpr (VSkipDataType == false) {
-                m_byte_count += write_value(m_output, static_cast<uint8_t>(data_types::string));
-            }
-
-            m_byte_count += write_value(m_output, static_cast<options_string_size_type>(value.size()));
-            m_byte_count += write_contiguous_container(m_output, value);
+            write_value(m_output, static_cast<options_string_size_type>(value.size()));
+            write_contiguous_container(m_output, value);
         }
      
-        template<bool VSkipDataType>
         inline void write_object(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
-
-            if constexpr (VSkipDataType == false) {
-                m_byte_count += write_value(m_output, static_cast<uint8_t>(data_types::object));
-            }
-
-            const auto block_start_position = m_byte_count;         
-
-            auto block_size_writer = post_output_writer<options_object_size_type>{ m_output };
+       
             auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };
-            m_byte_count += sizeof(options_object_size_type) + sizeof(options_object_property_count_type);
+            
+            auto block_size_writer = post_output_writer<options_object_size_type>{ m_output };
+            const auto block_start_position = m_output.size();
 
             auto object_write_context = write_context{ m_output };
             object<value_t>::map(object_write_context, value);
-            m_byte_count += object_write_context.m_byte_count;
 
-            const auto block_size = static_cast<options_object_size_type>(m_byte_count - block_start_position);
-            block_size_writer.update(block_size);
             property_count_writer.update(object_write_context.m_property_count);
+
+            const auto block_size = static_cast<options_object_size_type>(m_output.size() - block_start_position);
+            block_size_writer.update(block_size);
         }
 
-        template<bool VSkipDataType>
         inline void write_list(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            constexpr auto element_is_unique_ptr = is_specialization_v<element_t, std::unique_ptr>;
+            constexpr auto element_is_nullable = is_nullable_v<element_t>;    
 
-            if constexpr (VSkipDataType == false) {
-                m_byte_count += write_value(m_output, static_cast<uint8_t>(data_types::list));
-            }
+            write_data_type<element_is_nullable>(m_output, get_data_type<element_t>());
 
-            const auto block_start_position = m_byte_count;
+            write_value(m_output, static_cast<options_list_element_count_type>(value.size()));
 
             auto block_size_writer = post_output_writer<options_list_size_type>{ m_output };
-            m_byte_count += sizeof(options_list_size_type);
-
-            auto element_data_type = get_data_type<element_t>();
-            if constexpr (element_is_unique_ptr == true) {
-                set_element_flags(element_data_type, element_flags::data_type_per_element);
-            }
-
-            m_byte_count += write_value(m_output, element_data_type);
-            m_byte_count += write_value(m_output, static_cast<options_list_element_count_type>(value.size()));
+            const auto block_start_position = m_output.size();
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if constexpr (std::contiguous_iterator<typename value_t::iterator> == true)
                 {
-                    m_byte_count += write_contiguous_container(m_output, value);
+                    write_contiguous_container(m_output, value);
                 }
                 else {
                     for (const auto element_value : value) {
-                        m_byte_count += write_value(m_output, static_cast<const element_t>(element_value));
+                        write_value(m_output, static_cast<const element_t>(element_value));
                     }
                 }
             }
             else {
                 for (const auto& element_value : value) {
-                    map_impl<element_is_unique_ptr == false>(element_value);
+                    map_impl<true>(element_value);
                 }
             }
 
-            const auto block_size = static_cast<options_list_size_type>(m_byte_count - block_start_position);
+            const auto block_size = static_cast<options_list_size_type>(m_output.size() - block_start_position);
             block_size_writer.update(block_size);
         }
 
-        template<bool VSkipDataType>
         inline void write_formatted(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
-            if constexpr (VSkipDataType == false) {
-                m_byte_count += write_value(m_output, static_cast<uint8_t>(data_types::unspecified));
-            }
-
-            auto block_size_writer = post_output_writer<options_format_size_type>{ m_output };
-            m_byte_count += sizeof(options_format_size_type);
-            
+            auto block_size_writer = post_output_writer<options_format_size_type>{ m_output };            
             const auto block_start_position = m_output.size();
 
             auto format_write_context = write_format_context<TOptions>{ m_output };
             if (!object<value_t>::format(format_write_context, value)) {
                 // return std::unexpected(write_error_code::format_failure); // TODO
             }
-            const auto format_size = m_output.size() - block_start_position;
+
             /*if (format_size > static_cast<size_t>(std::numeric_limits< options_format_size_type>::max()))
             {
                 // return std::unexpected(write_error_code::format_size_overflow); // TODO
             }*/
 
-            m_byte_count += format_size;
-
-            const auto block_size = static_cast<options_format_size_type>(format_size);
+            const auto block_size = static_cast<options_format_size_type>(m_output.size() - block_start_position);
             block_size_writer.update(block_size);
         }
 
-        template<bool VSkipDataType>
-        inline auto& map_impl(auto& value) {
+        template<bool Vskip_data_type>
+        inline void map_impl(auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
+            constexpr auto value_is_nullable = is_nullable_v<value_t>;
+
+            if constexpr (Vskip_data_type == false) {
+                write_data_type<value_is_nullable>(m_output, get_data_type<value_t>());
+            }
+
+            if constexpr (value_is_nullable == true) {
+                const auto has_value = nullable_has_value(value);
+                write_nullable_has_value(m_output, has_value);
+                if (!has_value)
+                {
+                    return;
+                }
+            }
+
             if constexpr (value_fundamental_traits::is_fundamental == true) {
-                write_fundamental<VSkipDataType>(value);
+                write_fundamental(value);
             }
             else if constexpr (std::is_enum_v<value_t> == true) {
-                write_enum<VSkipDataType>(value);
+                write_enum(value);
             }
-            else if constexpr (std::is_same_v<value_t, std::string> == true) {
-                write_string<VSkipDataType>(value);
+            else if constexpr (is_std_string_v<value_t> == true) {
+                write_string(value);
             }
-            else if constexpr (is_specialization_v<value_t, std::unique_ptr> == true) {
-                if (value == nullptr) {
-                    write_null();
-                }
-                else {
-                    map_impl<VSkipDataType>(*value);
-                }
+            else if constexpr (
+                is_std_unique_ptr_v<value_t> == true ||
+                is_std_optional_v<value_t> == true)
+            {
+                map_impl<true>(*value);
             }
             else if constexpr (
                 is_std_array_v<value_t> == true ||
                 is_std_vector_v<value_t> == true ||
-                is_specialization_v<value_t, std::list> == true)
+                is_std_list_v<value_t> == true)
             {
-                write_list<VSkipDataType>(value);
+                write_list(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true) {
-                write_object<VSkipDataType>(value);
+                write_object(value);
             }
             else if constexpr (object_is_formatted<value_t>() == true) {
-                write_formatted<VSkipDataType>(value);
+                write_formatted(value);
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp data type.");
             }
-
-            return *this;
         }
 
         write_result_type& m_output;
-        size_t m_byte_count = 0;
         options_object_property_count_type m_property_count = 0;
 
     };
@@ -873,7 +887,8 @@ namespace blopp::impl {
                 return *this;
             }
             ++m_property_count;
-            return map_impl<false>(value);
+            m_error = map_impl<false>(value);
+            return *this;;
         }
 
         inline auto error() const {
@@ -890,59 +905,35 @@ namespace blopp::impl {
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
+        static constexpr auto options_allow_more_object_members = options::allow_more_object_members;
+        static constexpr auto options_allow_less_object_members = options::allow_less_object_members;
+
         inline void skip_input_bytes(const size_t byte_count) {
             m_input = m_input.subspan(byte_count);
         }
 
-        template<bool VSkipDataType, typename T>
+        template<typename T>
         inline auto read_fundamental_value(T& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<T>;
-            using value_fundamental_traits = fundamental_traits<value_t>;
-
-            if constexpr (VSkipDataType == false) {
-                if (!has_bytes_left(sizeof(data_types))) {
-                    return read_error_code::insufficient_data;
-                }
-
-                const auto data_type = read_value<data_types>(m_input);
-                if (data_type != value_fundamental_traits::data_type) {
-                    return read_error_code::mismatching_type;
-                }
-            }
 
             if (!has_bytes_left(sizeof(value_t))) {
                 return read_error_code::insufficient_data;
             }
 
             read_value(m_input, value);
-
             return {};
         }
 
-        template<bool VSkipDataType>
         inline auto read_fundamental(auto& value) -> std::optional<read_error_code> {
-            return read_fundamental_value<VSkipDataType>(value);
+            return read_fundamental_value(value);
         }
 
-        template<bool VSkipDataType>
         inline auto read_enum(auto& value) -> std::optional<read_error_code> {
             using value_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
-            return read_fundamental_value<VSkipDataType>(reinterpret_cast<value_t&>(value));
+            return read_fundamental_value(reinterpret_cast<value_t&>(value));
         }
 
-        template<bool VSkipDataType>
         inline auto read_string(std::string& value) -> std::optional<read_error_code> {
-            if constexpr (VSkipDataType == false) {
-                if (!has_bytes_left(sizeof(data_types))) {
-                    return read_error_code::insufficient_data;
-                }
-
-                const auto data_type = read_value<data_types>(m_input);
-                if (data_type != data_types::string) {
-                    return read_error_code::mismatching_type;
-                }
-            }
-            
             if (!has_bytes_left(sizeof(options_string_size_type))) {
                 return read_error_code::insufficient_data;
             }
@@ -962,20 +953,14 @@ namespace blopp::impl {
         inline auto read_unique_ptr(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::element_type;
-            
+
             if (!has_bytes_left(sizeof(data_types))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto data_type = read_value<data_types>(m_input);
-            if (data_type == data_types::null) {
-                value = nullptr;
-                return {};
-            }
-
             value = std::make_unique<element_t>();
             map_impl<true>(*value);
-        
+
             if (m_error.has_value()) {
                 return m_error.value();
             }
@@ -983,32 +968,37 @@ namespace blopp::impl {
             return {};
         }
 
-        template<bool VSkipDataType>
-        inline auto read_object(auto& value) -> std::optional<read_error_code> {
+        inline auto read_optional(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
+            using element_t = typename value_t::value_type;
 
-            if constexpr (VSkipDataType == false) {
-                if (!has_bytes_left(sizeof(data_types))) {
-                    return read_error_code::insufficient_data;
-                }
-
-                const auto data_type = read_value<data_types>(m_input);
-                if (data_type != data_types::object) {
-                    return read_error_code::mismatching_type;
-                }
-            }
-
-            if (!has_bytes_left(sizeof(options_object_size_type) + sizeof(options_object_property_count_type))) {
+            if (!has_bytes_left(sizeof(data_types))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto max_object_size = m_input.size();
-            const auto object_size = static_cast<size_t>(read_value<options_object_size_type>(m_input));
-            if (object_size > max_object_size) {
+            value = std::make_optional<element_t>();
+            map_impl<true>(*value);
+
+            if (m_error.has_value()) {
+                return m_error.value();
+            }
+
+            return {};
+        }
+
+        inline auto read_object(auto& value) -> std::optional<read_error_code> {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+
+            if (!has_bytes_left(sizeof(options_object_property_count_type) + sizeof(options_object_size_type))) {
                 return read_error_code::insufficient_data;
             }
 
             skip_input_bytes(sizeof(options_object_property_count_type));
+
+            const auto block_size = static_cast<size_t>(read_value<options_object_size_type>(m_input));
+            if (!has_bytes_left(block_size)) {
+                return read_error_code::insufficient_data;
+            }
 
             auto object_read_context = read_context{ m_input };
             object<value_t>::map(object_read_context, value);
@@ -1020,31 +1010,23 @@ namespace blopp::impl {
             return {};
         }
 
-        template<bool VSkipDataType>
         inline auto read_list(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            if constexpr (VSkipDataType == false) {
-                if (!has_bytes_left(sizeof(data_types))) {
-                    return read_error_code::insufficient_data;
-                }
-
-                const auto data_type = read_value<data_types>(m_input);
-                if (data_type != data_types::list) {
-                    return read_error_code::mismatching_type;
-                }
-            }
-
-            if (!has_bytes_left(sizeof(options_list_size_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
+            if (!has_bytes_left(sizeof(data_types) + sizeof(options_list_element_count_type) + sizeof(options_list_size_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            skip_input_bytes(sizeof(options_list_size_type));
+            constexpr auto element_is_nullable = is_nullable_v<element_t>;
 
-            const auto element_data_type_raw = read_value<data_types>(m_input);
-            const auto element_data_type = clean_element_flags(element_data_type_raw);
+            const auto [element_data_type, element_nullable_flag] = read_data_type_with_nullable_flag(m_input);
+
+            if (element_nullable_flag != element_is_nullable) {
+                return read_error_code::mismatching_nullable;
+            }
+
             if (element_data_type != get_data_type<element_t>()) {
                 return read_error_code::mismatching_type;
             }
@@ -1054,6 +1036,11 @@ namespace blopp::impl {
                 if (element_count != value.size()) {
                     return read_error_code::mismatching_array_size;
                 }
+            }
+
+            const auto block_size = static_cast<size_t>(read_value<options_list_size_type>(m_input));
+            if (!has_bytes_left(block_size)) {
+                return read_error_code::insufficient_data;
             }
 
             clear_container(value);
@@ -1078,20 +1065,8 @@ namespace blopp::impl {
             return {};
         }
 
-        template<bool VSkipDataType>
         inline auto read_formatted(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
-
-            if constexpr (VSkipDataType == false) {
-                if (!has_bytes_left(sizeof(data_types))) {
-                    return read_error_code::insufficient_data;
-                }
-
-                const auto data_type = read_value<data_types>(m_input);
-                if (data_type != data_types::unspecified) {
-                    return read_error_code::mismatching_type;
-                }
-            }
 
             if (!has_bytes_left(sizeof(options_format_size_type))) {
                 return read_error_code::insufficient_data;
@@ -1105,48 +1080,80 @@ namespace blopp::impl {
             auto format_result = std::optional<read_error_code>{};
             auto format_read_context = read_format_context<TOptions>{ m_input, format_result };
             object<value_t>::format(format_read_context, value);
-            
+
             return format_result;
         }
 
-        template<bool VSkipDataType>
-        inline auto& map_impl(auto& value)
-        {
+        template<bool Vskip_data_type>
+        inline auto map_impl(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
+            constexpr auto value_is_nullable = is_nullable_v<value_t>;
+
+            if constexpr (Vskip_data_type == false) {
+                if (!has_bytes_left(sizeof(data_types))) {
+                    return read_error_code::insufficient_data;
+                }
+
+                const auto [data_type, nullable_flag] = read_data_type_with_nullable_flag(m_input);
+            
+                if (nullable_flag != value_is_nullable) {
+                    return read_error_code::mismatching_nullable;
+                }
+
+                const auto value_data_type = get_data_type<value_t>();
+                if (data_type != value_data_type) {
+                    return read_error_code::mismatching_type;
+                }
+            }
+
+            if constexpr (value_is_nullable == true) {
+                if (!has_bytes_left(sizeof(bool))) {
+                    return read_error_code::insufficient_data;
+                }
+
+                auto has_value = read_nullable_has_value(m_input);
+                if (!has_value)
+                {
+                    clear_nullable_value(value);
+                    return std::nullopt;
+                }
+            }
+
             if constexpr (value_fundamental_traits::is_fundamental == true) {
-                m_error = read_fundamental<VSkipDataType>(value);
+                return read_fundamental(value);
             }
             else if constexpr (std::is_enum_v<value_t> == true) {
-                m_error = read_enum<VSkipDataType>(value);
+                return read_enum(value);
             }
-            else if constexpr (std::is_same_v<value_t, std::string> == true) {
-                m_error = read_string<VSkipDataType>(value);
+            else if constexpr (is_std_string_v<value_t> == true) {
+                return read_string(value);
             }
-            else if constexpr (is_specialization_v<value_t, std::unique_ptr> == true) {
-                m_error = read_unique_ptr(value);
+            else if constexpr (is_std_unique_ptr_v<value_t> == true) {
+                return read_unique_ptr(value);
+            }
+            else if constexpr (is_std_optional_v<value_t> == true) {
+                return read_optional(value);
             }
             else if constexpr (
                 is_std_array_v<value_t> == true ||
-                is_specialization_v<value_t, std::vector> == true ||
-                is_specialization_v<value_t, std::list> == true)
+                is_std_vector_v<value_t> == true ||
+                is_std_list_v<value_t> == true)
             {
-                m_error = read_list<VSkipDataType>(value);
+                return read_list(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true)
             {
-                m_error = read_object<VSkipDataType>(value);
+                return read_object(value);
             }
             else if constexpr (object_is_formatted<value_t>() == true)
             {
-                m_error = read_formatted<VSkipDataType>(value);
+                return read_formatted(value);
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp data type.");
             }
-
-            return *this;
         }
 
         uint16_t m_property_count = 0;
@@ -1162,7 +1169,7 @@ namespace blopp
 
     template<typename T>
     [[nodiscard]] auto write(const T& value) -> write_result_type {
-        return write<default_write_options, T>(value);
+        return write<default_options, T>(value);
     }
 
     template<typename TOptions, typename T>
@@ -1176,14 +1183,14 @@ namespace blopp
 
     template<typename T>
     [[nodiscard]] auto read(read_input_type input) -> read_result_type<T> {
-        return read<default_read_options, T>(input);
+        return read<default_options, T>(input);
     }
 
     template<typename TOptions, typename T>
     [[nodiscard]] auto read(read_input_type input) -> read_result_type<T> {
-
         auto result = read_result<T>{};
-        auto context = impl::read_context<TOptions>{ input };
+        read_input_type input_remaining = input;
+        auto context = impl::read_context<TOptions>{ input_remaining };
 
         context.map(result.value);
 
@@ -1195,6 +1202,7 @@ namespace blopp
 #endif
         }
 
+        result.remaining = input_remaining;
         return result;
     }
 

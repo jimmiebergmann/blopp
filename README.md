@@ -1,6 +1,8 @@
 # blopp
 ![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Workflow Status (master)](https://img.shields.io/github/workflow/status/jimmiebergmann/blopp/Build/master?label=Github&logo=Github) [![AppVeyor Status (master)](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
-Single header C++20 binary data reader/writer.
+Single header C++20 binary data serializer/deserializer.
+
+See [format_specification.md](https://github.com/jimmiebergmann/blopp/blob/main/format_specification.md) for a detailed description of the file format.
 
 ## Installation
 ```
@@ -21,9 +23,9 @@ or copy include/blopp.hpp to your project.
     `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
     `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
 * `enum`
-* `struct` or `class`
+* `struct`, `class`
 * `std::string`, `std::array`, `std::vector`, `std::list`
-* `std::unique_ptr`
+* `std::optional`, `std::unique_ptr`
 
 ## Example
 ``` cpp

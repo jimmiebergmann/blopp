@@ -44,8 +44,11 @@ TEST(type_object_vector, ok_vector_unique_ptr) {
 
     auto& output = output_result->value;
     ASSERT_EQ(output.size(), size_t{ 3 });
+
     EXPECT_EQ(output.at(0), nullptr);
-    EXPECT_NE(output.at(1), nullptr);
+
+    ASSERT_NE(output.at(1), nullptr);
     EXPECT_EQ((*output.at(1)), int32_t{ 123 });
+
     EXPECT_EQ(output.at(2), nullptr);
 }

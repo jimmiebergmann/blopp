@@ -1,5 +1,34 @@
 #include "blopp_test.hpp"
 
+/*struct allow_less_members_options
+{
+    using binary_format_types = blopp::default_binary_format_types;
+    static constexpr auto allow_more_object_members = false;
+    static constexpr auto allow_less_object_members = true;
+};
+
+struct disallow_less_members_options
+{
+    using binary_format_types = blopp::default_binary_format_types;
+    static constexpr auto allow_more_object_members = false;
+    static constexpr auto allow_less_object_members = false;
+};
+
+struct allow_more_members_options
+{
+    using binary_format_types = blopp::default_binary_format_types;
+    static constexpr auto allow_more_object_members = true;
+    static constexpr auto allow_less_object_members = false;
+};
+
+struct disallow_more_members_options
+{
+    using binary_format_types = blopp::default_binary_format_types;
+    static constexpr auto allow_more_object_members = false;
+    static constexpr auto allow_less_object_members = false;
+};*/
+
+
 struct test_object_empty {
 };
 
@@ -33,6 +62,16 @@ struct test_object_1 {
     std::array<int32_t, 5> array_int32;
 };
 
+struct test_member_count_2_members {
+    int32_t value_1;
+    int32_t value_2;
+};
+
+struct test_member_count_3_members {
+    int32_t value_1;
+    int32_t value_2;
+    int32_t value_3;
+};
 
 template<>
 struct blopp::object<test_object_empty> {
@@ -81,6 +120,25 @@ struct blopp::object<test_object_1> {
     }
 };
 
+
+template<>
+struct blopp::object<test_member_count_2_members> {
+    static void map(auto& context, auto& value) {
+        context
+            .map(value.value_1)
+            .map(value.value_2);
+    }
+};
+
+template<>
+struct blopp::object<test_member_count_3_members> {
+    static void map(auto& context, auto& value) {
+        context
+            .map(value.value_1)
+            .map(value.value_2)
+            .map(value.value_3);
+    }
+};
 
 
 TEST(type_object_map, ok_test_object_empty) {
@@ -174,13 +232,13 @@ TEST(type_object_map, ok_test_object_1_compare_options) {
         .array_int32 = { 1, 2, 3, 4, 5 }
     };
 
-    auto input_bytes_1 = blopp::write<blopp::default_write_options>(input);
-    auto input_bytes_2 = blopp::write<blopp::compact_write_options>(input);
+    auto input_bytes_1 = blopp::write<blopp::default_options>(input);
+    auto input_bytes_2 = blopp::write<blopp::compact_default_options>(input);
     ASSERT_TRUE(input_bytes_1.size() > input_bytes_2.size());
 
-    auto output_result_1 = blopp::read<blopp::default_write_options, test_object_1>(input_bytes_1);
+    auto output_result_1 = blopp::read<blopp::default_options, test_object_1>(input_bytes_1);
     ASSERT_TRUE(output_result_1);
-    auto output_result_2 = blopp::read<blopp::compact_write_options, test_object_1>(input_bytes_2);
+    auto output_result_2 = blopp::read<blopp::compact_default_options, test_object_1>(input_bytes_2);
     ASSERT_TRUE(output_result_2);
 }
 
@@ -232,3 +290,49 @@ TEST(type_object_map, fail_test_object_1_erase_inputs) {
         }
     }
 }
+/*
+TEST(type_object_map, ok_less_members) {
+    auto object_members_3 = test_member_count_3_members{
+        .value_1 = 1,
+        .value_2 = 2,
+        .value_3 = 3
+    };
+
+    auto input_bytes = blopp::write(object_members_3);
+
+    auto output_result = blopp::read<allow_less_members_options, test_member_count_2_members>(input_bytes);
+    ASSERT_TRUE(output_result);
+    EXPECT_EQ(output_result->remaining.size(), size_t{ 0 });
+    EXPECT_EQ(output_result->value.value_1, int32_t{ 1 });
+    EXPECT_EQ(output_result->value.value_2, int32_t{ 2 });
+}
+
+TEST(type_object_map, fail_less_members) {
+    auto object_members_3 = test_member_count_3_members{
+        .value_1 = 1,
+        .value_2 = 2,
+        .value_3 = 3
+    };
+
+    auto input_bytes = blopp::write(object_members_3);
+
+    auto output_result = blopp::read<disallow_less_members_options, test_member_count_2_members>(input_bytes);
+    ASSERT_FALSE(output_result);
+    EXPECT_EQ(output_result.error(), blopp::read_error_code::mismatching_object_property_count);
+}
+
+TEST(type_object_map, ok_more_members) {
+    auto object_members_2 = test_member_count_2_members{
+        .value_1 = 1,
+        .value_2 = 2
+    };
+
+    auto input_bytes = blopp::write(object_members_2);
+
+    auto output_result = blopp::read<allow_more_members_options, test_member_count_3_members>(input_bytes);
+    ASSERT_TRUE(output_result);
+    EXPECT_EQ(output_result->remaining.size(), size_t{ 0 });
+    EXPECT_EQ(output_result->value.value_1, int32_t{ 1 });
+    EXPECT_EQ(output_result->value.value_2, int32_t{ 2 });
+    EXPECT_EQ(output_result->value.value_3, int32_t{ });
+}*/
