@@ -6,6 +6,9 @@ For example, a struct consists of other nodes, representing its struct members. 
 All nodes start with a `data_type` byte and has optional data attached to it.
 
 ## data_type
+
+Type: `unit8_t`
+
 | name        | value | type                                     |
 | ----------- | ----- | ---------------------------------------- |
 | unspecified | 0     |                                          |
@@ -30,6 +33,15 @@ Enum values are stored as the underlying type.
 ## data_type flag
 Highest bit of `data_type` is set to 1 if the value is nullable(if value's type is `std::unique_ptr` or `std::optional`).
 
+## nullable_value flag
+
+Type: `unit8_t`
+
+| bit | description                                                        |
+| --- | ------------------------------------------------------------------ |
+| 1   | Set if node has value.                                      |
+| 2   | Set if node references to another node. (`shared_ptr` only) |
+
 ## Size and count types
 Some nodes, such as `string` consists of data for describing the string length.
 Data types for these types are compile time configurable via traits, but the follow types are used by default:
@@ -45,11 +57,11 @@ Data types for these types are compile time configurable via traits, but the fol
 
 ## Node layout
 
-| offset | size | type        | Description                                        |
-| ------ | ---- | ----------- | -------------------------------------------------- |
-| 0      | 1    | `data_type` | Always `0`                                         |
-| + 1    | 1    | `bool`      | `has data`, `true` if node has data, else `false`. <br> Only present if nullable flag in `data_type` is set. |
-| + 1    |      |             | Node data, present if `has data` is `true`         |
+| offset | size | type             | Description                                                          |
+| ------ | ---- | ---------------- | -------------------------------------------------------------------- |
+| 0      | 1    | `data_type`      | Data type of node                                                    |
+| + 1    | 1    | `nullable_value` | Describes if nullable node has a value and is refers to another node |
+| + 1    |      |                  | Node data, present if `nullable_value` has value flag is set.        |
 
 ## Node data layout
 

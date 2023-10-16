@@ -44,7 +44,9 @@
 #include <vector>
 #include <list>
 #include <span>
+#include <map>
 #include <tuple>
+#include <typeindex>
 #include <stdint.h>
 #include <stddef.h>
 #include <cstring>
@@ -137,9 +139,11 @@ namespace blopp {
         insufficient_data,
         mismatching_type,
         mismatching_nullable,
+        mismatching_reference,
         mismatching_array_size,
         mismatching_object_property_count,
-        format_insufficient_data
+        bad_reference_position,
+        bad_reference_type,
     };
 
 
@@ -208,6 +212,13 @@ namespace blopp::impl {
         list = 15
     };
 
+    enum class nullable_value_flags : uint8_t {
+        is_null = 0,
+        has_value = 1,
+        is_reference = 2,
+        has_value_and_is_reference = 3
+    };
+
 
     template<data_types Vdata_type>
     struct fundamental_traits_base {
@@ -258,11 +269,6 @@ namespace blopp::impl {
     static constexpr bool is_specialization_v = is_specialization<T, TRef>::value;
 
     template<typename T>
-    static constexpr bool is_nullable_v = 
-        is_specialization_v<T, std::unique_ptr> || 
-        is_specialization_v<T, std::optional>;
-
-    template<typename T>
     struct is_std_array : std::false_type {};
 
     template<typename T, size_t N>
@@ -284,7 +290,16 @@ namespace blopp::impl {
     static constexpr bool is_std_unique_ptr_v = is_specialization_v<T, std::unique_ptr>;
 
     template<typename T>
+    static constexpr bool is_std_shared_ptr_v = is_specialization_v<T, std::shared_ptr>;
+
+    template<typename T>
     static constexpr bool is_std_optional_v = is_specialization_v<T, std::optional>;
+
+    template<typename T>
+    static constexpr bool is_nullable_v =
+        is_std_unique_ptr_v<T> ||
+        is_std_shared_ptr_v<T> ||
+        is_std_optional_v<T>;
 
     struct dummy_read_write_context {
         auto& map(auto&) { return *this; }
@@ -323,7 +338,10 @@ namespace blopp::impl {
         else if constexpr (std::is_same_v<T, std::string> == true) {
             return data_types::string;
         }
-        else if constexpr (is_std_unique_ptr_v<T> == true) {
+        else if constexpr (
+            is_std_unique_ptr_v<T> == true ||
+            is_std_shared_ptr_v<T> == true)
+        {
             using element_t = typename T::element_type;
             return get_data_type<element_t>();
         }
@@ -349,36 +367,12 @@ namespace blopp::impl {
         }
     }
 
-    template<bool Vis_nullable>
-    inline void write_data_type(write_result_type& output, data_types data_type) {      
-        auto value = static_cast<uint8_t>(data_type);
-        if constexpr (Vis_nullable == true) {
-            value = static_cast<uint8_t>(value | 0b10000000);
-        }
-        output.push_back(value);
-    }
-
-    inline void write_nullable_has_value(write_result_type& output, const bool has_value) {
-        output.push_back(has_value);
-    }
-
-    template<typename TValue>
-    inline void write_value(write_result_type& output, const TValue& value) {
-        const auto* value_ptr = reinterpret_cast<const uint8_t*>(&value);
-        std::copy(value_ptr, value_ptr + sizeof(value), std::back_inserter(output));
-    }
-
-    template<typename TContainer>
-    inline void write_contiguous_container(write_result_type& output, const TContainer& container) {
-        using element_t = typename TContainer::value_type;
-        const auto container_ptr = reinterpret_cast<const uint8_t*>(container.data());
-        const auto container_byte_count = sizeof(element_t) * container.size();
-        std::copy(container_ptr, container_ptr + container_byte_count, std::back_inserter(output));
-    }
-
     template<typename TValue>
     inline bool nullable_has_value([[maybe_unused]] const TValue& value) {
-        if constexpr (is_std_unique_ptr_v<TValue> == true) {
+        if constexpr (
+            is_std_unique_ptr_v<TValue> == true ||
+            is_std_shared_ptr_v<TValue> == true)
+        {
             return value != nullptr;
         }
         else if constexpr (is_std_optional_v<TValue> == true) {
@@ -413,75 +407,6 @@ namespace blopp::impl {
         }
     }
 
-    inline data_types read_data_type(read_input_type& input) {
-        auto next_byte_without_flag = static_cast<uint8_t>(*input.data() & 0b01111111);
-        input = input.subspan(sizeof(uint8_t));
-        return static_cast<data_types>(next_byte_without_flag);
-    }
-
-    inline bool read_nullable_has_value(read_input_type& input) {
-        auto value = static_cast<bool>(*input.data());
-        input = input.subspan(sizeof(bool));
-        return value;
-    }
-
-    inline std::pair<data_types, bool> read_data_type_with_nullable_flag(read_input_type& input) {
-        auto next_byte = *input.data();
-        auto next_byte_without_flag = static_cast<uint8_t>(next_byte & 0b01111111);
-        auto flag = static_cast<bool>(next_byte & 0b10000000);
-        input = input.subspan(sizeof(uint8_t));
-        return { static_cast<data_types>(next_byte_without_flag), flag };
-    }
-
-    template<typename T>
-    inline T read_value(read_input_type& input) {
-        auto value = T{};
-        std::memcpy(&value, input.data(), sizeof(T));
-        input = input.subspan(sizeof(T));
-        return value;
-    }
-
-    template<typename T>
-    inline void read_value(read_input_type& input, T& value) {
-        std::memcpy(&value, input.data(), sizeof(T));
-        input = input.subspan(sizeof(T));
-    }
-
-    template<typename TContainer>
-    inline void read_container(read_input_type& input, TContainer& container, const size_t count) {
-        using container_t = std::remove_cvref_t<decltype(container)>;
-        using element_t = typename container_t::value_type;
-
-        if(count == 0) {
-            return;
-        }
-
-        if constexpr (is_std_array_v<container_t> == true) {
-            const auto* src_element_ptr = input.data();
-            auto* dest_element_ptr = container.data();
-            std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
-        }
-        else if constexpr (std::contiguous_iterator<typename TContainer::iterator> == true) {
-            size_t old_container_size = container.size();
-            container.resize(old_container_size + count);
-
-            const auto* src_element_ptr = input.data();
-            auto* dest_element_ptr = container.data() + old_container_size;
-            std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
-        }
-        else {
-            auto* src_element_ptr = input.data();
-            for (size_t i = 0; i < count; ++i) {
-                auto element_value = element_t{};
-                std::memcpy(&element_value, src_element_ptr, sizeof(element_t));
-                container.push_back(element_value);
-                src_element_ptr += sizeof(element_t);
-            }
-        }
-        
-        input = input.subspan(count * sizeof(element_t));
-    }
-
 
     template<typename T>
     class post_output_writer
@@ -507,9 +432,43 @@ namespace blopp::impl {
 
     };
 
+    class write_context_base {
+
+    protected:
+
+        explicit write_context_base(write_result_type& output) :
+            m_output{ output }
+        {}
+
+        template<bool Vis_nullable>
+        inline void write_data_type(data_types data_type) {
+            auto value = static_cast<uint8_t>(data_type);
+            if constexpr (Vis_nullable == true) {
+                value = static_cast<uint8_t>(value | 0b10000000);
+            }
+            m_output.push_back(value);
+        }
+
+        template<typename TValue>
+        inline void write_value(const TValue& value) {
+            const auto* value_ptr = reinterpret_cast<const uint8_t*>(&value);
+            std::copy(value_ptr, value_ptr + sizeof(value), std::back_inserter(m_output));
+        }
+
+        template<typename TContainer>
+        inline void write_contiguous_container( const TContainer& container) {
+            using element_t = typename TContainer::value_type;
+            const auto container_ptr = reinterpret_cast<const uint8_t*>(container.data());
+            const auto container_byte_count = sizeof(element_t) * container.size();
+            std::copy(container_ptr, container_ptr + container_byte_count, std::back_inserter(m_output));
+        }
+
+        write_result_type& m_output;
+
+    };
 
     template<typename TOptions>
-    class write_format_context {
+    class write_format_context : private write_context_base {
 
     public:
 
@@ -518,7 +477,7 @@ namespace blopp::impl {
         explicit write_format_context(
             write_result_type& output
         ) :
-            m_output{ output }
+            write_context_base{ output }
         {}
 
         write_format_context(const write_format_context&) = delete;
@@ -545,7 +504,7 @@ namespace blopp::impl {
                 value_fundamental_traits::is_fundamental == true ||
                 std::is_enum_v<value_t> == true)
             {
-                write_value(m_output, value);
+                write_value(value);
             }
             else if constexpr (
                 is_std_array_v<value_t> == true)
@@ -557,7 +516,7 @@ namespace blopp::impl {
                     element_fundamental_traits::is_fundamental == true ||
                     std::is_enum_v<element_t> == true) 
                 {
-                    write_contiguous_container(m_output, value);
+                    write_contiguous_container(value);
                 }
                 else {
                     static_assert(always_false<value_t>, "Unmapped blopp format container element data type.");
@@ -570,23 +529,30 @@ namespace blopp::impl {
             return m_format_size <= max_format_size;
         };
 
-        write_result_type& m_output;
         size_t m_format_size = 0;
 
     };
 
+    struct write_reference {
+        uint64_t position;
+        std::type_index type_index;
+    };
+
+    using write_reference_map = std::map<const void*, write_reference>;
 
     template<typename TOptions>
-    class write_context {
+    class write_context : private write_context_base {
 
     public:
 
         static constexpr auto direction = context_direction::write;
 
         explicit write_context(
-            write_result_type& output
+            write_result_type& output,
+            write_reference_map& reference_map
         ) :
-            m_output{ output }
+            write_context_base{ output },
+            m_reference_map{ reference_map }
         {}
 
         write_context(const write_context&) = delete;
@@ -610,20 +576,66 @@ namespace blopp::impl {
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
+        template<typename TValue>
+        inline bool write_nullable_value_flags(const TValue& value) {           
+            using value_t = std::remove_cvref_t<decltype(value)>;
+
+            const auto has_value = nullable_has_value(value);
+
+            if constexpr (is_std_shared_ptr_v<value_t> == true) {
+                if (!has_value) {
+                    m_output.push_back(static_cast<uint8_t>(nullable_value_flags::is_null));
+                    return false;
+                }
+
+                auto it = m_reference_map.find(value.get());
+                if (it != m_reference_map.end()) {
+                    m_output.push_back(static_cast<uint8_t>(nullable_value_flags::has_value_and_is_reference));
+                    write_value(it->second.position);
+                    return false;
+                }
+
+                m_output.push_back(static_cast<uint8_t>(nullable_value_flags::has_value));
+                return true;
+            }
+            else {
+                static_assert(static_cast<uint8_t>(false) == static_cast<uint8_t>(nullable_value_flags::is_null),
+                    "Blopp failed to cast boolean to correct nullable_value_flags. false != is_null");
+
+                static_assert(static_cast<uint8_t>(true) == static_cast<uint8_t>(nullable_value_flags::has_value),
+                    "Blopp failed to cast boolean to correct nullable_value_flags. true != has_value");
+
+                m_output.push_back(static_cast<uint8_t>(has_value));
+                return has_value;
+            }
+        }
+
         inline void write_fundamental(const auto& value) {
-            write_value(m_output, value);
+            write_value(value);
         }
 
         inline void write_enum(const auto& value) {
             using underlying_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
-            write_value(m_output, static_cast<underlying_t>(value));
+            write_value(static_cast<underlying_t>(value));
         }
 
         inline void write_string(const auto& value) {
-            write_value(m_output, static_cast<options_string_size_type>(value.size()));
-            write_contiguous_container(m_output, value);
+            write_value(static_cast<options_string_size_type>(value.size()));
+            write_contiguous_container(value);
         }
-     
+
+        inline void write_shared_ptr(const auto& value) {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using element_t = typename value_t::element_type;
+
+            m_reference_map.emplace(value.get(), write_reference{
+                .position = static_cast<uint64_t>(m_output.size()),
+                .type_index = std::type_index(typeid(element_t))
+            });
+
+            map_impl<true>(*value);
+        }
+
         inline void write_object(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
        
@@ -632,7 +644,7 @@ namespace blopp::impl {
             auto block_size_writer = post_output_writer<options_object_size_type>{ m_output };
             const auto block_start_position = m_output.size();
 
-            auto object_write_context = write_context{ m_output };
+            auto object_write_context = write_context{ m_output, m_reference_map };
             object<value_t>::map(object_write_context, value);
 
             property_count_writer.update(object_write_context.m_property_count);
@@ -648,9 +660,9 @@ namespace blopp::impl {
 
             constexpr auto element_is_nullable = is_nullable_v<element_t>;    
 
-            write_data_type<element_is_nullable>(m_output, get_data_type<element_t>());
+            write_data_type<element_is_nullable>(get_data_type<element_t>());
 
-            write_value(m_output, static_cast<options_list_element_count_type>(value.size()));
+            write_value(static_cast<options_list_element_count_type>(value.size()));
 
             auto block_size_writer = post_output_writer<options_list_size_type>{ m_output };
             const auto block_start_position = m_output.size();
@@ -658,11 +670,11 @@ namespace blopp::impl {
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if constexpr (std::contiguous_iterator<typename value_t::iterator> == true)
                 {
-                    write_contiguous_container(m_output, value);
+                    write_contiguous_container(value);
                 }
                 else {
                     for (const auto element_value : value) {
-                        write_value(m_output, static_cast<const element_t>(element_value));
+                        write_value(static_cast<const element_t>(element_value));
                     }
                 }
             }
@@ -704,14 +716,11 @@ namespace blopp::impl {
             constexpr auto value_is_nullable = is_nullable_v<value_t>;
 
             if constexpr (Vskip_data_type == false) {
-                write_data_type<value_is_nullable>(m_output, get_data_type<value_t>());
+                write_data_type<value_is_nullable>(get_data_type<value_t>());
             }
 
             if constexpr (value_is_nullable == true) {
-                const auto has_value = nullable_has_value(value);
-                write_nullable_has_value(m_output, has_value);
-                if (!has_value)
-                {
+                if (!write_nullable_value_flags(value)) {
                     return;
                 }
             }
@@ -731,6 +740,9 @@ namespace blopp::impl {
             {
                 map_impl<true>(*value);
             }
+            else if constexpr (is_std_shared_ptr_v<value_t> == true) {
+                write_shared_ptr(value);
+            }
             else if constexpr (
                 is_std_array_v<value_t> == true ||
                 is_std_vector_v<value_t> == true ||
@@ -749,12 +761,12 @@ namespace blopp::impl {
             }
         }
 
-        write_result_type& m_output;
         options_object_property_count_type m_property_count = 0;
+        write_reference_map& m_reference_map;
 
     };
 
-    class read_context_base {        
+    class read_context_base {
 
     protected:
 
@@ -778,6 +790,75 @@ namespace blopp::impl {
 
             return m_input.size() >= (count * sizeof(T));
         }
+
+        inline data_types read_data_type() {
+            auto next_byte_without_flag = static_cast<uint8_t>(*m_input.data() & 0b01111111);
+            m_input = m_input.subspan(sizeof(uint8_t));
+            return static_cast<data_types>(next_byte_without_flag);
+        }
+
+        inline uint8_t read_nullable_value_flags() {
+            auto value = static_cast<uint8_t>(*m_input.data() & 0b00000011);
+            m_input = m_input.subspan(sizeof(uint8_t));
+            return value;
+        }
+
+        inline std::pair<data_types, bool> read_data_type_with_nullable_flag() {
+            auto next_byte = *m_input.data();
+            auto next_byte_without_flag = static_cast<uint8_t>(next_byte & 0b01111111);
+            auto flag = static_cast<bool>(next_byte & 0b10000000);
+            m_input = m_input.subspan(sizeof(uint8_t));
+            return { static_cast<data_types>(next_byte_without_flag), flag };
+        }
+
+        template<typename T>
+        inline T read_value() {
+            auto value = T{};
+            std::memcpy(&value, m_input.data(), sizeof(T));
+            m_input = m_input.subspan(sizeof(T));
+            return value;
+        }
+
+        template<typename T>
+        inline void read_value(T& value) {
+            std::memcpy(&value, m_input.data(), sizeof(T));
+            m_input = m_input.subspan(sizeof(T));
+        }
+
+        template<typename TContainer>
+        inline void read_container(TContainer& container, const size_t count) {
+            using container_t = std::remove_cvref_t<decltype(container)>;
+            using element_t = typename container_t::value_type;
+
+            if (count == 0) {
+                return;
+            }
+
+            if constexpr (is_std_array_v<container_t> == true) {
+                const auto* src_element_ptr = m_input.data();
+                auto* dest_element_ptr = container.data();
+                std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
+            }
+            else if constexpr (std::contiguous_iterator<typename TContainer::iterator> == true) {
+                size_t old_container_size = container.size();
+                container.resize(old_container_size + count);
+
+                const auto* src_element_ptr = m_input.data();
+                auto* dest_element_ptr = container.data() + old_container_size;
+                std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
+            }
+            else {
+                auto* src_element_ptr = m_input.data();
+                for (size_t i = 0; i < count; ++i) {
+                    auto element_value = element_t{};
+                    std::memcpy(&element_value, src_element_ptr, sizeof(element_t));
+                    container.push_back(element_value);
+                    src_element_ptr += sizeof(element_t);
+                }
+            }
+
+            m_input = m_input.subspan(count * sizeof(element_t));
+        }
         
         read_input_type& m_input;
 
@@ -785,7 +866,7 @@ namespace blopp::impl {
 
 
     template<typename TOptions>
-    class read_format_context: public read_context_base {
+    class read_format_context: private read_context_base {
 
     public:
 
@@ -825,11 +906,11 @@ namespace blopp::impl {
             {
                 if (!has_bytes_left(sizeof(value_t)))
                 {
-                    m_error = read_error_code::format_insufficient_data;
+                    m_error = read_error_code::insufficient_data;
                     return false;
                 }
 
-                read_value(m_input, value);
+                read_value(value);
 
                 return true;
             }
@@ -843,11 +924,11 @@ namespace blopp::impl {
                 {
                     if (!has_bytes_left<element_t>(value.size()))
                     {
-                        m_error = read_error_code::format_insufficient_data;
+                        m_error = read_error_code::insufficient_data;
                         return false;
                     }
 
-                    read_container(m_input, value, value.size());
+                    read_container(value, value.size());
                     return true;
                 }
                 else {
@@ -863,18 +944,28 @@ namespace blopp::impl {
 
     };
 
+    struct read_reference {
+        std::shared_ptr<void> pointer;
+        std::type_index type_index;
+    };
+
+    using read_reference_map = std::map<uint64_t, read_reference>;
 
     template<typename TOptions>
-    class read_context : public read_context_base {
+    class read_context : private read_context_base {
 
     public:
 
         static constexpr auto direction = context_direction::read;
 
         explicit read_context(
-            read_input_type& input
+            read_input_type& input,
+            read_input_type original_input,
+            read_reference_map& reference_map
         ) :
-            read_context_base{ input }
+            read_context_base{ input },
+            m_original_input{ original_input },
+            m_reference_map{ reference_map }
         {} 
 
         read_context(const read_context&) = delete;
@@ -888,7 +979,7 @@ namespace blopp::impl {
             }
             ++m_property_count;
             m_error = map_impl<false>(value);
-            return *this;;
+            return *this;
         }
 
         inline auto error() const {
@@ -920,7 +1011,7 @@ namespace blopp::impl {
                 return read_error_code::insufficient_data;
             }
 
-            read_value(m_input, value);
+            read_value(value);
             return {};
         }
 
@@ -938,14 +1029,14 @@ namespace blopp::impl {
                 return read_error_code::insufficient_data;
             }
 
-            const auto string_size = static_cast<size_t>(read_value<options_string_size_type>(m_input));
+            const auto string_size = static_cast<size_t>(read_value<options_string_size_type>());
 
             if (!has_bytes_left(string_size)) {
                 return read_error_code::insufficient_data;
             }
 
             value.clear();
-            read_container(m_input, value, string_size);
+            read_container(value, string_size);
 
             return {};
         }
@@ -959,13 +1050,50 @@ namespace blopp::impl {
             }
 
             value = std::make_unique<element_t>();
-            map_impl<true>(*value);
+            return map_impl<true>(*value);
+        }
 
-            if (m_error.has_value()) {
-                return m_error.value();
+        inline auto read_shared_ptr(auto& value) -> std::optional<read_error_code> {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using element_t = typename value_t::element_type;
+
+            if (!has_bytes_left(sizeof(uint8_t))) {
+                return read_error_code::insufficient_data;
             }
 
-            return {};
+            const auto nullable_value_flags = read_nullable_value_flags();
+
+            if (!(nullable_value_flags & static_cast<uint8_t>(nullable_value_flags::has_value))) {
+                clear_nullable_value(value);
+                return std::nullopt;
+            }
+
+            if (nullable_value_flags & static_cast<uint8_t>(nullable_value_flags::is_reference)) {
+                const auto position = read_value<uint64_t>();
+
+                auto it = m_reference_map.find(position);
+                if (it == m_reference_map.end()) {
+                    return read_error_code::bad_reference_position;
+                }
+
+                if (it->second.type_index != std::type_index(typeid(element_t))) {
+                    return read_error_code::bad_reference_type;
+                }
+
+                value = std::static_pointer_cast<element_t>(it->second.pointer);
+                return std::nullopt;
+            }
+
+            value = std::make_shared<element_t>();
+
+            const auto position = static_cast<uint64_t>(m_input.data() - m_original_input.data());
+
+            m_reference_map.emplace(position, read_reference{
+                .pointer = value,
+                .type_index = std::type_index(typeid(element_t))
+            });
+
+            return map_impl<true>(*value);
         }
 
         inline auto read_optional(auto& value) -> std::optional<read_error_code> {
@@ -977,13 +1105,7 @@ namespace blopp::impl {
             }
 
             value = std::make_optional<element_t>();
-            map_impl<true>(*value);
-
-            if (m_error.has_value()) {
-                return m_error.value();
-            }
-
-            return {};
+            return map_impl<true>(*value);
         }
 
         inline auto read_object(auto& value) -> std::optional<read_error_code> {
@@ -995,12 +1117,12 @@ namespace blopp::impl {
 
             skip_input_bytes(sizeof(options_object_property_count_type));
 
-            const auto block_size = static_cast<size_t>(read_value<options_object_size_type>(m_input));
+            const auto block_size = static_cast<size_t>(read_value<options_object_size_type>());
             if (!has_bytes_left(block_size)) {
                 return read_error_code::insufficient_data;
             }
 
-            auto object_read_context = read_context{ m_input };
+            auto object_read_context = read_context{ m_input, m_original_input, m_reference_map };
             object<value_t>::map(object_read_context, value);
 
             if (object_read_context.m_error) {
@@ -1021,7 +1143,7 @@ namespace blopp::impl {
 
             constexpr auto element_is_nullable = is_nullable_v<element_t>;
 
-            const auto [element_data_type, element_nullable_flag] = read_data_type_with_nullable_flag(m_input);
+            const auto [element_data_type, element_nullable_flag] = read_data_type_with_nullable_flag();
 
             if (element_nullable_flag != element_is_nullable) {
                 return read_error_code::mismatching_nullable;
@@ -1031,14 +1153,14 @@ namespace blopp::impl {
                 return read_error_code::mismatching_type;
             }
 
-            const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>(m_input));
+            const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>());
             if constexpr (is_std_array_v<value_t> == true) {
                 if (element_count != value.size()) {
                     return read_error_code::mismatching_array_size;
                 }
             }
 
-            const auto block_size = static_cast<size_t>(read_value<options_list_size_type>(m_input));
+            const auto block_size = static_cast<size_t>(read_value<options_list_size_type>());
             if (!has_bytes_left(block_size)) {
                 return read_error_code::insufficient_data;
             }
@@ -1050,14 +1172,13 @@ namespace blopp::impl {
                     return read_error_code::insufficient_data;
                 }
 
-                read_container(m_input, value, element_count);
+                read_container(value, element_count);
             }
             else {
                 for (size_t i = 0; i < element_count; ++i) {
                     auto& element_value = emplace_container(value, i);
-                    map_impl<true>(element_value);
-                    if (m_error.has_value()) {
-                        return m_error;
+                    if (auto map_error = map_impl<true>(element_value); map_error) {
+                        return map_error;
                     }
                 }
             }
@@ -1072,7 +1193,7 @@ namespace blopp::impl {
                 return read_error_code::insufficient_data;
             }
 
-            const auto object_size = static_cast<size_t>(read_value<options_format_size_type>(m_input));
+            const auto object_size = static_cast<size_t>(read_value<options_format_size_type>());
             if (!has_bytes_left(object_size)) {
                 return read_error_code::insufficient_data;
             }
@@ -1096,7 +1217,7 @@ namespace blopp::impl {
                     return read_error_code::insufficient_data;
                 }
 
-                const auto [data_type, nullable_flag] = read_data_type_with_nullable_flag(m_input);
+                const auto [data_type, nullable_flag] = read_data_type_with_nullable_flag();
             
                 if (nullable_flag != value_is_nullable) {
                     return read_error_code::mismatching_nullable;
@@ -1108,13 +1229,18 @@ namespace blopp::impl {
                 }
             }
 
-            if constexpr (value_is_nullable == true) {
-                if (!has_bytes_left(sizeof(bool))) {
+            if constexpr (value_is_nullable == true && is_std_shared_ptr_v<value_t> == false) {
+                if (!has_bytes_left(sizeof(uint8_t))) {
                     return read_error_code::insufficient_data;
                 }
 
-                auto has_value = read_nullable_has_value(m_input);
-                if (!has_value)
+                const auto nullable_value_flags = read_nullable_value_flags();
+
+                if (nullable_value_flags & static_cast<uint8_t>(nullable_value_flags::is_reference)) {
+                    return read_error_code::mismatching_reference;
+                }
+
+                if (!nullable_value_flags)
                 {
                     clear_nullable_value(value);
                     return std::nullopt;
@@ -1132,6 +1258,9 @@ namespace blopp::impl {
             }
             else if constexpr (is_std_unique_ptr_v<value_t> == true) {
                 return read_unique_ptr(value);
+            }
+            else if constexpr (is_std_shared_ptr_v<value_t> == true) {
+                return read_shared_ptr(value);
             }
             else if constexpr (is_std_optional_v<value_t> == true) {
                 return read_optional(value);
@@ -1156,8 +1285,10 @@ namespace blopp::impl {
             }
         }
 
-        uint16_t m_property_count = 0;
-        std::optional<read_error_code> m_error;
+        std::optional<read_error_code> m_error = {};
+        uint16_t m_property_count = 0;   
+        read_input_type m_original_input;
+        read_reference_map& m_reference_map;
 
     };
 
@@ -1175,7 +1306,14 @@ namespace blopp
     template<typename TOptions, typename T>
     [[nodiscard]] auto write(const T& value) -> write_result_type {
         auto result = write_result_type{};
-        auto context = impl::write_context<TOptions>{ result };
+
+        impl::write_reference_map reference_map = {};
+
+        auto context = impl::write_context<TOptions>{
+            result,
+            reference_map
+        };
+
         context.map(value);
         return result;
     }
@@ -1189,8 +1327,15 @@ namespace blopp
     template<typename TOptions, typename T>
     [[nodiscard]] auto read(read_input_type input) -> read_result_type<T> {
         auto result = read_result<T>{};
+
         read_input_type input_remaining = input;
-        auto context = impl::read_context<TOptions>{ input_remaining };
+        impl::read_reference_map reference_map = {};
+        
+        auto context = impl::read_context<TOptions>{ 
+            input_remaining,
+            input_remaining,
+            reference_map
+        };
 
         context.map(result.value);
 
