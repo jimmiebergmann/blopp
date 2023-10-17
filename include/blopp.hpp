@@ -89,9 +89,20 @@ namespace blopp {
 
     template<typename TValue, typename TError>
     using expected = result_wrapper<TValue, TError>;
+
+    template<typename T, typename TError>
+    inline result_wrapper<T, TError> make_unexpected(const TError& error) {
+        return result_wrapper<T, TError>{ error };
+    }
+
 #else
     template<typename TValue, typename TError>
     using expected = std::expected<TValue, TError>;
+
+    template<typename T, typename TError>
+    inline std::unexpected<TError> make_unexpected(const TError& error) {
+        return std::unexpected(error);
+    }
 #endif
 
     struct default_binary_format_types {
@@ -639,18 +650,18 @@ namespace blopp::impl {
         inline void write_object(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
        
-            auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };
-            
             auto block_size_writer = post_output_writer<options_object_size_type>{ m_output };
+            auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };      
+            
             const auto block_start_position = m_output.size();
 
             auto object_write_context = write_context{ m_output, m_reference_map };
             object<value_t>::map(object_write_context, value);
 
-            property_count_writer.update(object_write_context.m_property_count);
-
             const auto block_size = static_cast<options_object_size_type>(m_output.size() - block_start_position);
             block_size_writer.update(block_size);
+
+            property_count_writer.update(object_write_context.m_property_count);
         }
 
         inline void write_list(const auto& value) {
@@ -658,14 +669,13 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            constexpr auto element_is_nullable = is_nullable_v<element_t>;    
+            auto block_size_writer = post_output_writer<options_list_size_type>{ m_output };
+            const auto block_start_position = m_output.size();
 
+            constexpr auto element_is_nullable = is_nullable_v<element_t>;
             write_data_type<element_is_nullable>(get_data_type<element_t>());
 
             write_value(static_cast<options_list_element_count_type>(value.size()));
-
-            auto block_size_writer = post_output_writer<options_list_size_type>{ m_output };
-            const auto block_start_position = m_output.size();
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if constexpr (std::contiguous_iterator<typename value_t::iterator> == true)
@@ -1111,16 +1121,16 @@ namespace blopp::impl {
         inline auto read_object(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
-            if (!has_bytes_left(sizeof(options_object_property_count_type) + sizeof(options_object_size_type))) {
+            if (!has_bytes_left(sizeof(options_object_size_type) + sizeof(options_object_property_count_type))) {
                 return read_error_code::insufficient_data;
             }
-
-            skip_input_bytes(sizeof(options_object_property_count_type));
 
             const auto block_size = static_cast<size_t>(read_value<options_object_size_type>());
             if (!has_bytes_left(block_size)) {
                 return read_error_code::insufficient_data;
             }
+
+            skip_input_bytes(sizeof(options_object_property_count_type));
 
             auto object_read_context = read_context{ m_input, m_original_input, m_reference_map };
             object<value_t>::map(object_read_context, value);
@@ -1137,13 +1147,17 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            if (!has_bytes_left(sizeof(data_types) + sizeof(options_list_element_count_type) + sizeof(options_list_size_type))) {
+            if (!has_bytes_left(sizeof(options_list_size_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            constexpr auto element_is_nullable = is_nullable_v<element_t>;
+            const auto block_size = static_cast<size_t>(read_value<options_list_size_type>());
+            if (!has_bytes_left(block_size)) {
+                return read_error_code::insufficient_data;
+            }
 
             const auto [element_data_type, element_nullable_flag] = read_data_type_with_nullable_flag();
+            constexpr auto element_is_nullable = is_nullable_v<element_t>;
 
             if (element_nullable_flag != element_is_nullable) {
                 return read_error_code::mismatching_nullable;
@@ -1151,18 +1165,13 @@ namespace blopp::impl {
 
             if (element_data_type != get_data_type<element_t>()) {
                 return read_error_code::mismatching_type;
-            }
+            }           
 
             const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>());
             if constexpr (is_std_array_v<value_t> == true) {
                 if (element_count != value.size()) {
                     return read_error_code::mismatching_array_size;
                 }
-            }
-
-            const auto block_size = static_cast<size_t>(read_value<options_list_size_type>());
-            if (!has_bytes_left(block_size)) {
-                return read_error_code::insufficient_data;
             }
 
             clear_container(value);
@@ -1340,11 +1349,7 @@ namespace blopp
         context.map(result.value);
 
         if (auto error = context.error(); error) {
-#if defined(BLOPP_EXPECTED_IS_RESULT_WRAPPER)
-            return read_result_type<T>{error.value()};
-#else
-            return std::unexpected(error.value());
-#endif
+            return make_unexpected<read_result<T>, read_error_code>(error.value());
         }
 
         result.remaining = input_remaining;

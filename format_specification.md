@@ -37,8 +37,8 @@ Highest bit of `data_type` is set to 1 if the value is nullable(if value's type 
 
 Type: `unit8_t`
 
-| bit | description                                                        |
-| --- | ------------------------------------------------------------------ |
+| bit | description                                                 |
+| --- | ----------------------------------------------------------- |
 | 1   | Set if node has value.                                      |
 | 2   | Set if node references to another node. (`shared_ptr` only) |
 
@@ -57,99 +57,99 @@ Data types for these types are compile time configurable via traits, but the fol
 
 ## Node layout
 
-| offset | size | type             | Description                                                          |
-| ------ | ---- | ---------------- | -------------------------------------------------------------------- |
-| 0      | 1    | `data_type`      | Data type of node                                                    |
-| + 1    | 1    | `nullable_value` | Describes if nullable node has a value and is refers to another node |
-| + 1    |      |                  | Node data, present if `nullable_value` has value flag is set.        |
+| size | type             | Description                                                                                      |
+| ---- | ---------------- | ------------------------------------------------------------------------------------------------ |
+| 1    | `data_type`      | Data type of node                                                                                |
+| 1    | `nullable_value` | Describes if nullable node has a value and is refers to another node                             |
+|      |                  | Node data, present if `nullable_value` isnt't present, or nullable_value` has value flag is set. |
 
 ## Node data layout
 
 ### `unspecified` layout
-| offset | size                   | type             | Description |
-| ------ | ---------------------- | ---------------- | ----------- |
-| 0      | sizeof(list_size_type) | `list_size_type` | Always `0`  |
+| size                   | type             | Description |
+| ---------------------- | ---------------- | ----------- |
+| sizeof(list_size_type) | `list_size_type` | Always `0`  |
 
 ### `boolean` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 1    | `bool`      | Value       |
+| size | type   | Description |
+| ---- | ------ | ----------- |
+| 1    | `bool` | Value       |
 
 ### `character` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 1    | `char`      | Value       |
+| size | type   | Description |
+| ---- | ------ | ----------- |
+| 1    | `char` | Value       |
 
 ### `int8` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 1    | `int8_t`    | Value       |
+| size | type     | Description |
+| ---- | -------- | ----------- |
+| 1    | `int8_t` | Value       |
 
 ### `int16` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 2    | `int16_t`   | Value       |
+| size | type      | Description |
+| ---- | --------- | ----------- |
+| 2    | `int16_t` | Value       |
 
 ### `int32` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 4    | `int32_t`   | Value       |
+| size | type      | Description |
+| ---- | --------- | ----------- |
+| 4    | `int32_t` | Value       |
 
 ### `int64` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 8    | `int64_t`   | Value       |
+| size | type      | Description |
+| ---- | --------- | ----------- |
+| 8    | `int64_t` | Value       |
 
 ### `uint8` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 1    | `uint8_t`   | Value       |
+| size | type      | Description |
+| ---- | --------- | ----------- |
+| 1    | `uint8_t` | Value       |
 
 ### `uint16` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 2    | `uint16_t`  | Value       |
+| size | type       | Description |
+| ---- | ---------- | ----------- |
+| 2    | `uint16_t` | Value       |
 
 ### `uint32` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 4    | `uint32_t`  | Value       |
+| size | type       | Description |
+| ---- | ---------- | ----------- |
+| 4    | `uint32_t` | Value       |
 
 ### `uint64` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 8    | `uint64_t`  | Value       |
+| size | type       | Description |
+| ---- | ---------- | ----------- |
+| 8    | `uint64_t` | Value       |
 
 ### `float32` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 4    | `float`     | Value       |
+| size | type    | Description |
+| ---- | ------- | ----------- |
+| 4    | `float` | Value       |
 
 ### `float64` layout
-| offset | size | type        | Description |
-| ------ | ---- | ----------- | ----------- |
-| 0      | 8    | `double`    | Value       |
+| size | type     | Description |
+| ---- | -------- | ----------- |
+| 8    | `double` | Value       |
 
 ### `string` layout
-| offset                     | size                     | type               | Description      |
-| -------------------------- | ------------------------ | ------------------ | ---------------- |
-| 0                          | sizeof(string_size_type) | string_size_type   | Length of string |
-| + sizeof(string_size_type) | Length of string         | `char`             | Value            |
+| size                     | type               | Description      |
+| ------------------------ | ------------------ | ---------------- |
+| sizeof(string_size_type) | string_size_type   | Length of string |
+| Length of string         | `char`             | Value            |
 
 ### `object` layout
-| offset                               | size                               | type                       | Description                 |
-| ------------------------------------ | ---------------------------------- | -------------------------- | --------------------------- |
-| 0                                    | sizeof(object_property_count_type) | object_property_count_type | Property count              |
-| + sizeof(object_property_count_type) | sizeof(object_size_type)           | object_size_type           | Size of `object properties` |
-| + sizeof(object_size_type)           | Size of `object properties`        | `node`[Property count]     | `object properties`         |
+| size                               | type                       | Description                                                |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------- |
+| object_size_type                   | object_size_type           | Offset to end of `object properties`, excluding this field |
+| sizeof(object_property_count_type) | object_property_count_type | Property count                                             |
+| Size of `object properties`        | `node`[Property count]     | `object properties`                                        |
 
 ### `list` layout
-| offset                            | size                            | type                    | Description             |
-| --------------------------------- | ------------------------------- | ----------------------- | ----------------------- |
-| 0                                 | 1                               | `data_type`             | element `data_type`     |
-| + 1                               | sizeof(list_element_count_type) | list_element_count_type | Element count           |
-| + sizeof(list_element_count_type) | sizeof(list_size_type)          | list_size_type          | Size of `list elements` |
-| + sizeof(list_size_type)          | Size of `list elements`         | `node`[Element count]   | `list elements`         |
+| size                            | type                    | Description                                            |
+| ------------------------------- | ----------------------- | ------------------------------------------------------ |
+| sizeof(list_size_type)          | list_size_type          | Offset to end of `list elements`, excluding this field |
+| 1                               | `data_type`             | Element `data_type`                                    |
+| sizeof(list_element_count_type) | list_element_count_type | Element count                                          |
+| Size of `list elements`         | `node`[Element count]   | `list elements`                                        |
 
 `data_type` of each `node` in `list elements` is omitted, which makes a list of integers the same size of a c-style array.
 
