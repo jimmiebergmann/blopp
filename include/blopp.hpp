@@ -721,7 +721,7 @@ namespace blopp::impl {
             const auto index = value.index();    
             write_value(static_cast<options_variant_index_type>(index));
 
-            std::visit([this](const auto& variant_value) {
+            std::visit([&](const auto& variant_value) {
                 map_impl<false>(variant_value);
             }, value);
         }
