@@ -1171,7 +1171,7 @@ namespace blopp::impl {
             size_t loop_index = 0;
             auto read_variant_error = std::optional<read_error_code>{};
 
-            ((index == loop_index++ && (void(read_variant_error = read_variant_value<Ts>(value)), 1)) ||  ...);
+            (void)((index == loop_index++ && ((read_variant_error = read_variant_value<Ts>(value)), 1)) || ...);
 
             return read_variant_error;
         }
