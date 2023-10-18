@@ -19,8 +19,6 @@ struct blopp::object<test_struct> {
 using variant_test_type = std::variant<int32_t, float, test_struct>;
 
 TEST(type_variant, ok_variant_index_int) {
-    
-
     auto input = variant_test_type{ int32_t{ 123 } };
 
     auto input_bytes = blopp::write(input);
@@ -34,8 +32,6 @@ TEST(type_variant, ok_variant_index_int) {
 }
 
 TEST(type_variant, ok_variant_index_float) {
-    using variant_type = std::variant<int32_t, float>;
-
     auto input = variant_test_type{ 16.0f };
 
     auto input_bytes = blopp::write(input);
@@ -50,8 +46,6 @@ TEST(type_variant, ok_variant_index_float) {
 
 
 TEST(type_variant, ok_variant_index_struct) {
-    using variant_type = std::variant<int32_t, float>;
-
     auto input = variant_test_type{ 
         test_struct{
             .value_1 = 123,
