@@ -27,6 +27,7 @@ Type: `unit8_t`
 | string      | 13    | `std::string`                            |
 | object      | 14    | `struct`, `class`                        |
 | list        | 15    | `std::array`, `std::vector`, `std::list` |
+| variant     | 16    | `std::variant`                           |
 
 Enum values are stored as the underlying type.
 
@@ -152,4 +153,10 @@ Data types for these types are compile time configurable via traits, but the fol
 | Size of `list elements`         | `node`[Element count]   | `list elements`                                        |
 
 `data_type` of each `node` in `list elements` is omitted, which makes a list of integers the same size of a c-style array.
+
+### `variant` layout
+| size                       | type               | Description     |
+| -------------------------- | ------------------ | --------------- |
+| sizeof(variant_index_type) | variant_index_type | index           |
+| Size of `variant value`    | `node`             | `variant value` |
 

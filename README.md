@@ -25,7 +25,8 @@ or copy include/blopp.hpp to your project.
 * `enum`
 * `struct`, `class`
 * `std::string`, `std::array`, `std::vector`, `std::list`
-* `std::optional`, `std::unique_ptr`
+* `std::optional`, `std::unique_ptr`, `std::shared_ptr`
+* `std::variant`
 
 ## Example
 ``` cpp

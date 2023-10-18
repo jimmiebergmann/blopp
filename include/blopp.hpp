@@ -46,6 +46,7 @@
 #include <span>
 #include <map>
 #include <tuple>
+#include <variant>
 #include <typeindex>
 #include <stdint.h>
 #include <stddef.h>
@@ -111,6 +112,7 @@ namespace blopp {
         using object_property_count_type = uint16_t;
         using list_size_type = uint64_t;
         using list_element_count_type = uint64_t;
+        using variant_index_type = uint16_t;
         using format_size_type = uint16_t;
     };
 
@@ -120,6 +122,7 @@ namespace blopp {
         using object_property_count_type = uint16_t;
         using list_size_type = uint32_t;
         using list_element_count_type = uint32_t;
+        using variant_index_type = uint8_t;
         using format_size_type = uint8_t;
     };
 
@@ -155,6 +158,7 @@ namespace blopp {
         mismatching_object_property_count,
         bad_reference_position,
         bad_reference_type,
+        bad_variant_index
     };
 
 
@@ -220,7 +224,8 @@ namespace blopp::impl {
         float64 = 12,
         string = 13,
         object = 14,
-        list = 15
+        list = 15,
+        variant = 16
     };
 
     enum class nullable_value_flags : uint8_t {
@@ -286,6 +291,12 @@ namespace blopp::impl {
     struct is_std_array<std::array<T, N>> : std::true_type {};
 
     template<typename T>
+    struct is_std_variant : std::false_type {};
+
+    template<typename ... Ts>
+    struct is_std_variant<std::variant<Ts...>> : std::true_type {};
+
+    template<typename T>
     static constexpr bool is_std_array_v = is_std_array<T>::value;
 
     template<typename T>
@@ -305,6 +316,9 @@ namespace blopp::impl {
 
     template<typename T>
     static constexpr bool is_std_optional_v = is_specialization_v<T, std::optional>;
+
+    template<typename T>
+    static constexpr bool is_std_variant_v = is_std_variant<T>::value;
 
     template<typename T>
     static constexpr bool is_nullable_v =
@@ -366,6 +380,9 @@ namespace blopp::impl {
             is_std_list_v<T> == true)
         {
             return data_types::list;
+        }
+        else if constexpr (is_std_variant_v<T> == true) {
+            return data_types::variant;
         }
         else if constexpr (std::is_class_v<T> == true && object_is_mapped<T>() == true) {
             return data_types::object;
@@ -585,6 +602,7 @@ namespace blopp::impl {
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
         using options_list_size_type = typename options::binary_format_types::list_size_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
+        using options_variant_index_type = typename options::binary_format_types::variant_index_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
         template<typename TValue>
@@ -698,6 +716,16 @@ namespace blopp::impl {
             block_size_writer.update(block_size);
         }
 
+        inline void write_variant(const auto& value) {
+            
+            const auto index = value.index();    
+            write_value(static_cast<options_variant_index_type>(index));
+
+            std::visit([this](const auto& variant_value) {
+                map_impl<false>(variant_value);
+            }, value);
+        }
+
         inline void write_formatted(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
@@ -759,6 +787,9 @@ namespace blopp::impl {
                 is_std_list_v<value_t> == true)
             {
                 write_list(value);
+            }
+            else if constexpr (is_std_variant<value_t>() == true) {
+                write_variant(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true) {
                 write_object(value);
@@ -1004,6 +1035,7 @@ namespace blopp::impl {
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
         using options_list_size_type = typename options::binary_format_types::list_size_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
+        using options_variant_index_type = typename options::binary_format_types::variant_index_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
         static constexpr auto options_allow_more_object_members = options::allow_more_object_members;
@@ -1116,6 +1148,34 @@ namespace blopp::impl {
 
             value = std::make_optional<element_t>();
             return map_impl<true>(*value);
+        }
+
+        template<typename T, typename ... Ts>
+        inline auto read_variant_value(std::variant<Ts...>& value) -> std::optional<read_error_code>
+        {
+            value = T{};
+            return map_impl<false>(std::get<T>(value));
+        }
+
+        template<typename ... Ts>
+        inline auto read_variant(std::variant<Ts...>& value) -> std::optional<read_error_code> {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+
+            if (!has_bytes_left(sizeof(options_variant_index_type))) {
+                return read_error_code::insufficient_data;
+            }
+
+            const auto index = static_cast<size_t>(read_value<options_variant_index_type>());
+            if (index >= sizeof...(Ts)) {
+                return read_error_code::bad_variant_index;
+            }
+
+            size_t loop_index = 0;
+            auto read_variant_error = std::optional<read_error_code>{};
+
+            ((index == loop_index++ && (void(read_variant_error = read_variant_value<Ts>(value)), 1)) ||  ...);
+
+            return read_variant_error;
         }
 
         inline auto read_object(auto& value) -> std::optional<read_error_code> {
@@ -1280,6 +1340,9 @@ namespace blopp::impl {
                 is_std_list_v<value_t> == true)
             {
                 return read_list(value);
+            }
+            else if constexpr (is_std_variant<value_t>() == true) {
+                return read_variant(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true)
             {
