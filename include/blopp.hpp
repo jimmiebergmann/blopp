@@ -108,9 +108,9 @@ namespace blopp {
 
     struct default_binary_format_types {
         using string_size_type = uint64_t;
-        using object_size_type = uint64_t;
+        using object_offset_type = uint64_t;
         using object_property_count_type = uint16_t;
-        using list_size_type = uint64_t;
+        using list_offset_type = uint64_t;
         using list_element_count_type = uint64_t;
         using variant_index_type = uint16_t;
         using format_size_type = uint16_t;
@@ -118,9 +118,9 @@ namespace blopp {
 
     struct compact_binary_format_types {
         using string_size_type = uint32_t;
-        using object_size_type = uint32_t;
+        using object_offset_type = uint32_t;
         using object_property_count_type = uint16_t;
-        using list_size_type = uint32_t;
+        using list_offset_type = uint32_t;
         using list_element_count_type = uint32_t;
         using variant_index_type = uint8_t;
         using format_size_type = uint8_t;
@@ -598,9 +598,9 @@ namespace blopp::impl {
 
         using options = TOptions;
         using options_string_size_type = typename options::binary_format_types::string_size_type;
-        using options_object_size_type = typename options::binary_format_types::object_size_type;
+        using options_object_offset_type = typename options::binary_format_types::object_offset_type;
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
-        using options_list_size_type = typename options::binary_format_types::list_size_type;
+        using options_list_offset_type = typename options::binary_format_types::list_offset_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_variant_index_type = typename options::binary_format_types::variant_index_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
@@ -668,7 +668,7 @@ namespace blopp::impl {
         inline void write_object(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
        
-            auto block_size_writer = post_output_writer<options_object_size_type>{ m_output };
+            auto block_offset_writer = post_output_writer<options_object_offset_type>{ m_output };
             auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };      
             
             const auto block_start_position = m_output.size();
@@ -676,8 +676,8 @@ namespace blopp::impl {
             auto object_write_context = write_context{ m_output, m_reference_map };
             object<value_t>::map(object_write_context, value);
 
-            const auto block_size = static_cast<options_object_size_type>(m_output.size() - block_start_position);
-            block_size_writer.update(block_size);
+            const auto block_offset = static_cast<options_object_offset_type>(m_output.size() - block_start_position);
+            block_offset_writer.update(block_offset);
 
             property_count_writer.update(object_write_context.m_property_count);
         }
@@ -687,7 +687,7 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            auto block_size_writer = post_output_writer<options_list_size_type>{ m_output };
+            auto block_offset_writer = post_output_writer<options_list_offset_type>{ m_output };
             const auto block_start_position = m_output.size();
 
             constexpr auto element_is_nullable = is_nullable_v<element_t>;
@@ -712,8 +712,8 @@ namespace blopp::impl {
                 }
             }
 
-            const auto block_size = static_cast<options_list_size_type>(m_output.size() - block_start_position);
-            block_size_writer.update(block_size);
+            const auto block_offset = static_cast<options_list_offset_type>(m_output.size() - block_start_position);
+            block_offset_writer.update(block_offset);
         }
 
         inline void write_variant(const auto& value) {
@@ -1031,9 +1031,9 @@ namespace blopp::impl {
 
         using options = TOptions;
         using options_string_size_type = typename options::binary_format_types::string_size_type;
-        using options_object_size_type = typename options::binary_format_types::object_size_type;
+        using options_object_offset_type = typename options::binary_format_types::object_offset_type;
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
-        using options_list_size_type = typename options::binary_format_types::list_size_type;
+        using options_list_offset_type = typename options::binary_format_types::list_offset_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_variant_index_type = typename options::binary_format_types::variant_index_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
@@ -1159,8 +1159,6 @@ namespace blopp::impl {
 
         template<typename ... Ts>
         inline auto read_variant(std::variant<Ts...>& value) -> std::optional<read_error_code> {
-            using value_t = std::remove_cvref_t<decltype(value)>;
-
             if (!has_bytes_left(sizeof(options_variant_index_type))) {
                 return read_error_code::insufficient_data;
             }
@@ -1181,12 +1179,12 @@ namespace blopp::impl {
         inline auto read_object(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
-            if (!has_bytes_left(sizeof(options_object_size_type) + sizeof(options_object_property_count_type))) {
+            if (!has_bytes_left(sizeof(options_object_offset_type) + sizeof(options_object_property_count_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto block_size = static_cast<size_t>(read_value<options_object_size_type>());
-            if (!has_bytes_left(block_size)) {
+            const auto block_offset = static_cast<size_t>(read_value<options_object_offset_type>());
+            if (!has_bytes_left(block_offset)) {
                 return read_error_code::insufficient_data;
             }
 
@@ -1207,12 +1205,12 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            if (!has_bytes_left(sizeof(options_list_size_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
+            if (!has_bytes_left(sizeof(options_list_offset_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto block_size = static_cast<size_t>(read_value<options_list_size_type>());
-            if (!has_bytes_left(block_size)) {
+            const auto block_offset = static_cast<size_t>(read_value<options_list_offset_type>());
+            if (!has_bytes_left(block_offset)) {
                 return read_error_code::insufficient_data;
             }
 
