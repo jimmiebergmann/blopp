@@ -446,7 +446,9 @@ namespace blopp::impl {
             m_output{ output },
             m_position{ m_output.size() }
         {
-            m_output.insert(m_output.end(), sizeof(T), uint8_t{});
+            auto default_value = T{};
+            const auto* value_ptr = reinterpret_cast<const uint8_t*>(&default_value);
+            std::copy(value_ptr, value_ptr + sizeof(T), std::back_inserter(m_output));
         }
 
         void update(const T value) {
