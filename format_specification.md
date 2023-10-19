@@ -9,25 +9,25 @@ All nodes start with a `data_type` byte and has optional data attached to it.
 
 Type: `unit8_t`
 
-| name        | value | type                                     |
-| ----------- | ----- | ---------------------------------------- |
-| unspecified | 0     |                                          |
-| boolean     | 1     | `bool`                                   |
-| character   | 2     | `char`                                   |
-| int8        | 3     | `int8_t`                                 |
-| int16       | 4     | `int16_t`                                |
-| int32       | 5     | `int32_t`                                |
-| int64       | 6     | `int64_t`                                |
-| uint8       | 7     | `uint8_t`                                |
-| uint16      | 8     | `uint16_t`                               |
-| uint32      | 9     | `uint32_t`                               |
-| uint64      | 10    | `uint64_t`                               |
-| float32     | 11    | `float`                                  |
-| float64     | 12    | `double`                                 |
-| string      | 13    | `std::string`                            |
-| object      | 14    | `struct`, `class`                        |
-| list        | 15    | `std::array`, `std::vector`, `std::list` |
-| variant     | 16    | `std::variant`                           |
+| name        | value | type                                                      |
+| ----------- | ----- | --------------------------------------------------------- |
+| unspecified | 0     |                                                           |
+| boolean     | 1     | `bool`                                                    |
+| character   | 2     | `char`                                                    |
+| int8        | 3     | `int8_t`                                                  |
+| int16       | 4     | `int16_t`                                                 |
+| int32       | 5     | `int32_t`                                                 |
+| int64       | 6     | `int64_t`                                                 |
+| uint8       | 7     | `uint8_t`                                                 |
+| uint16      | 8     | `uint16_t`                                                |
+| uint32      | 9     | `uint32_t`                                                |
+| uint64      | 10    | `uint64_t`                                                |
+| float32     | 11    | `float`                                                   |
+| float64     | 12    | `double`                                                  |
+| string      | 13    | `std::string`                                             |
+| object      | 14    | `struct`, `class`                                         |
+| list        | 15    | `std::vector`, `std::list`, `std::array`, `c-style array` |
+| variant     | 16    | `std::variant`                                            |
 
 Enum values are stored as the underlying type.
 

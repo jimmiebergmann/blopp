@@ -278,7 +278,7 @@ namespace blopp::impl {
     template<typename T, template<typename...> typename TRef>
     struct is_specialization : std::false_type {};
 
-    template<template<typename...> class TRef, typename... TArgs>
+    template<template<typename...> typename TRef, typename... TArgs>
     struct is_specialization<TRef<TArgs...>, TRef> : std::true_type {};
 
     template<typename T, template<typename...> typename TRef>
@@ -287,8 +287,14 @@ namespace blopp::impl {
     template<typename T>
     struct is_std_array : std::false_type {};
 
-    template<typename T, size_t N>
-    struct is_std_array<std::array<T, N>> : std::true_type {};
+    template<typename T, size_t Vn>
+    struct is_std_array<std::array<T, Vn>> : std::true_type {};
+
+    template<typename T>
+    struct is_std_span : std::false_type {};
+
+    template<typename T, size_t Vextent>
+    struct is_std_span<std::span<T, Vextent>> : std::true_type {};
 
     template<typename T>
     struct is_std_variant : std::false_type {};
@@ -298,6 +304,9 @@ namespace blopp::impl {
 
     template<typename T>
     static constexpr bool is_std_array_v = is_std_array<T>::value;
+
+    template<typename T>
+    static constexpr bool is_std_span_v = is_std_span<T>::value;
 
     template<typename T>
     static constexpr bool is_std_vector_v = is_specialization_v<T, std::vector>;
@@ -377,7 +386,8 @@ namespace blopp::impl {
         else if constexpr (
             is_std_array_v<T> == true ||
             is_std_vector_v<T> == true ||
-            is_std_list_v<T> == true)
+            is_std_list_v<T> == true ||
+            std::is_array_v<T> == true)
         {
             return data_types::list;
         }
@@ -419,7 +429,10 @@ namespace blopp::impl {
     template<typename TContainer>
     inline void clear_container([[maybe_unused]] TContainer& container) {
         using container_t = std::remove_cvref_t<decltype(container)>;
-        if constexpr (is_std_array_v<container_t> == false) {
+        if constexpr (
+            is_std_vector_v<container_t> == true ||
+            is_std_list_v<container_t> == true)
+        {
             container.clear();
         }
     }
@@ -450,6 +463,11 @@ namespace blopp::impl {
             const auto* value_ptr = reinterpret_cast<const uint8_t*>(&default_value);
             std::copy(value_ptr, value_ptr + sizeof(T), std::back_inserter(m_output));
         }
+
+        post_output_writer(const post_output_writer&) = delete;
+        post_output_writer(post_output_writer&&) = delete;
+        post_output_writer& operator = (const post_output_writer&) = delete;
+        post_output_writer& operator = (post_output_writer&&) = delete;
 
         void update(const T value) {
             std::memcpy(m_output.data() + m_position, &value, sizeof(T));
@@ -486,7 +504,7 @@ namespace blopp::impl {
         }
 
         template<typename TContainer>
-        inline void write_contiguous_container( const TContainer& container) {
+        inline void write_contiguous_container(const TContainer& container) {
             using element_t = typename TContainer::value_type;
             const auto container_ptr = reinterpret_cast<const uint8_t*>(container.data());
             const auto container_byte_count = sizeof(element_t) * container.size();
@@ -526,7 +544,20 @@ namespace blopp::impl {
         
         static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
 
-        [[nodiscard]] inline bool format_impl(auto& value) {
+        [[nodiscard]] inline auto write_array(auto& value) {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using element_t = typename value_t::value_type;
+            using element_fundamental_traits = fundamental_traits<element_t>;
+
+            static_assert(
+                element_fundamental_traits::is_fundamental == true ||
+                std::is_enum_v<element_t> == true,
+                "Only fundamentals and enums are supported for blopp formatting of arrays.");
+
+            write_contiguous_container(value);
+        }
+
+        [[nodiscard]] inline auto format_impl(auto& value) -> bool {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
@@ -536,21 +567,12 @@ namespace blopp::impl {
             {
                 write_value(value);
             }
-            else if constexpr (
-                is_std_array_v<value_t> == true)
-            {
-                using element_t = typename value_t::value_type;
-                using element_fundamental_traits = fundamental_traits<element_t>;
-
-                if constexpr (
-                    element_fundamental_traits::is_fundamental == true ||
-                    std::is_enum_v<element_t> == true) 
-                {
-                    write_contiguous_container(value);
-                }
-                else {
-                    static_assert(always_false<value_t>, "Unmapped blopp format container element data type.");
-                }
+            else if constexpr (is_std_array_v<value_t> == true) {
+                write_array(value);
+            }
+            else if constexpr (std::is_array_v<value_t> == true) {
+                auto array_span = std::span(value);
+                write_array(array_span);
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp format data type.");
@@ -716,7 +738,7 @@ namespace blopp::impl {
 
             const auto block_offset = static_cast<options_list_offset_type>(m_output.size() - block_start_position);
             block_offset_writer.update(block_offset);
-        }
+        }   
 
         inline void write_variant(const auto& value) {
             
@@ -789,6 +811,9 @@ namespace blopp::impl {
                 is_std_list_v<value_t> == true)
             {
                 write_list(value);
+            }
+            else if constexpr (std::is_array_v<value_t> == true) {
+                write_list(std::span(value));
             }
             else if constexpr (is_std_variant<value_t>() == true) {
                 write_variant(value);
@@ -877,7 +902,10 @@ namespace blopp::impl {
                 return;
             }
 
-            if constexpr (is_std_array_v<container_t> == true) {
+            if constexpr (
+                is_std_array_v<container_t> == true ||
+                is_std_span_v<container_t> == true)
+            {
                 const auto* src_element_ptr = m_input.data();
                 auto* dest_element_ptr = container.data();
                 std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
@@ -939,44 +967,55 @@ namespace blopp::impl {
 
         static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
 
-        [[nodiscard]] bool format_impl(auto& value) {
+        [[nodiscard]] inline auto read_fundamental(auto& value) -> bool {
             using value_t = std::remove_cvref_t<decltype(value)>;
-            using value_fundamental_traits = fundamental_traits<value_t>;
+
+            if (!has_bytes_left(sizeof(value_t)))
+            {
+                m_error = read_error_code::insufficient_data;
+                return false;
+            }
+
+            read_value(value);
+            return true;
+        }
+
+        [[nodiscard]] inline auto read_array(auto& value) -> bool {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using element_t = typename value_t::value_type;
+            using element_fundamental_traits = fundamental_traits<element_t>;
+
+            static_assert(
+                element_fundamental_traits::is_fundamental == true ||
+                std::is_enum_v<element_t> == true,
+                "Only fundamentals and enums are supported for blopp formatting of arrays.");
+
+            if (!has_bytes_left<element_t>(value.size()))
+            {
+                m_error = read_error_code::insufficient_data;
+                return false;
+            }
+
+            read_container(value, value.size());
+            return true;
+        }
+
+        [[nodiscard]] inline auto format_impl(auto& value) -> bool {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using value_fundamental_traits = fundamental_traits<value_t>;     
 
             if constexpr (
                 value_fundamental_traits::is_fundamental == true ||
                 std::is_enum_v<value_t> == true)
             {
-                if (!has_bytes_left(sizeof(value_t)))
-                {
-                    m_error = read_error_code::insufficient_data;
-                    return false;
-                }
-
-                read_value(value);
-
-                return true;
+                return read_fundamental(value);
             }
             else if constexpr (is_std_array_v<value_t> == true) {
-                using element_t = typename value_t::value_type;
-                using element_fundamental_traits = fundamental_traits<element_t>;
-
-                if constexpr (
-                    element_fundamental_traits::is_fundamental == true ||
-                    std::is_enum_v<element_t> == true)
-                {
-                    if (!has_bytes_left<element_t>(value.size()))
-                    {
-                        m_error = read_error_code::insufficient_data;
-                        return false;
-                    }
-
-                    read_container(value, value.size());
-                    return true;
-                }
-                else {
-                    static_assert(always_false<value_t>, "Unmapped blopp format container element data type.");
-                }
+                return read_array(value);
+            }
+            else if constexpr (std::is_array_v<value_t> == true) {
+                auto array_span = std::span(value);
+                return read_array(array_span);
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp format data type.");
@@ -1340,6 +1379,10 @@ namespace blopp::impl {
                 is_std_list_v<value_t> == true)
             {
                 return read_list(value);
+            }
+            else if constexpr (std::is_array_v<value_t> == true) {
+                [[maybe_unused]] auto array_span = std::span(value);
+                return read_list(array_span);
             }
             else if constexpr (is_std_variant<value_t>() == true) {
                 return read_variant(value);

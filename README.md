@@ -24,7 +24,7 @@ or copy include/blopp.hpp to your project.
     `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
 * `enum`
 * `struct`, `class`
-* `std::string`, `std::array`, `std::vector`, `std::list`
+* `std::string`, `std::vector`, `std::list`, `std::array`, `c-style array`
 * `std::optional`, `std::unique_ptr`, `std::shared_ptr`
 * `std::variant`
 
@@ -106,7 +106,7 @@ int main()
 #### Does `blopp::read` return `std::expected`?
 Yes, if your compiler supports it, else a small std::expected-like class called `result_wrapper` is returned.
 
-#### Why isn't c-style arrays supported? 
+#### Why isn't c-style arrays supported at root? 
 Due to limitations of std::expected.
 
 #### How can I map my custom type without representing it as an object?
