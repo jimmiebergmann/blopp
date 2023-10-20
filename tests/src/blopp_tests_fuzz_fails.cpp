@@ -22,6 +22,7 @@ struct blopp::object<fuzz_object> {
 
 TEST(fuzz_fails, fail_1)
 {
+    // FIXED:
     // read_context -> map -> map_impl -> read_list -> read_contiguous_container:
     // Buffer overflow due to has_bytes_left returning false when element_count * sizeof(element_t) overflows.
 

@@ -107,21 +107,21 @@ namespace blopp {
 #endif
 
     struct default_binary_format_types {
+        using offset_type = uint64_t;
         using string_size_type = uint64_t;
-        using object_offset_type = uint64_t;
         using object_property_count_type = uint16_t;
-        using list_offset_type = uint64_t;
         using list_element_count_type = uint64_t;
+        using map_element_count_type = uint64_t;
         using variant_index_type = uint16_t;
         using format_size_type = uint16_t;
     };
 
     struct compact_binary_format_types {
+        using offset_type = uint32_t;
         using string_size_type = uint32_t;
-        using object_offset_type = uint32_t;
         using object_property_count_type = uint16_t;
-        using list_offset_type = uint32_t;
         using list_element_count_type = uint32_t;
+        using map_element_count_type = uint32_t;
         using variant_index_type = uint8_t;
         using format_size_type = uint8_t;
     };
@@ -225,7 +225,8 @@ namespace blopp::impl {
         string = 13,
         object = 14,
         list = 15,
-        variant = 16
+        map = 16,
+        variant = 17
     };
 
     enum class nullable_value_flags : uint8_t {
@@ -297,12 +298,6 @@ namespace blopp::impl {
     struct is_std_span<std::span<T, Vextent>> : std::true_type {};
 
     template<typename T>
-    struct is_std_variant : std::false_type {};
-
-    template<typename ... Ts>
-    struct is_std_variant<std::variant<Ts...>> : std::true_type {};
-
-    template<typename T>
     static constexpr bool is_std_array_v = is_std_array<T>::value;
 
     template<typename T>
@@ -327,7 +322,12 @@ namespace blopp::impl {
     static constexpr bool is_std_optional_v = is_specialization_v<T, std::optional>;
 
     template<typename T>
-    static constexpr bool is_std_variant_v = is_std_variant<T>::value;
+    static constexpr bool is_std_variant_v = is_specialization_v<T, std::variant>;
+
+    template<typename T>
+    static constexpr bool is_std_map_v = 
+        is_specialization_v<T, std::map> ||
+        is_specialization_v<T, std::multimap>;
 
     template<typename T>
     static constexpr bool is_nullable_v =
@@ -369,7 +369,7 @@ namespace blopp::impl {
             using underlying_fundamental_traits = fundamental_traits<underlying_t>;
             return underlying_fundamental_traits::data_type;
         }
-        else if constexpr (std::is_same_v<T, std::string> == true) {
+        else if constexpr (is_std_string_v<T> == true) {
             return data_types::string;
         }
         else if constexpr (
@@ -390,6 +390,9 @@ namespace blopp::impl {
             std::is_array_v<T> == true)
         {
             return data_types::list;
+        }
+        else if constexpr (is_std_map_v<T> == true) {
+            return data_types::map;
         }
         else if constexpr (is_std_variant_v<T> == true) {
             return data_types::variant;
@@ -431,7 +434,8 @@ namespace blopp::impl {
         using container_t = std::remove_cvref_t<decltype(container)>;
         if constexpr (
             is_std_vector_v<container_t> == true ||
-            is_std_list_v<container_t> == true)
+            is_std_list_v<container_t> == true ||
+            is_std_map_v<container_t> == true)
         {
             container.clear();
         }
@@ -621,11 +625,11 @@ namespace blopp::impl {
     private:
 
         using options = TOptions;
+        using options_offset_type = typename options::binary_format_types::offset_type;
         using options_string_size_type = typename options::binary_format_types::string_size_type;
-        using options_object_offset_type = typename options::binary_format_types::object_offset_type;
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
-        using options_list_offset_type = typename options::binary_format_types::list_offset_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
+        using options_map_element_count_type = typename options::binary_format_types::map_element_count_type;
         using options_variant_index_type = typename options::binary_format_types::variant_index_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
@@ -692,7 +696,7 @@ namespace blopp::impl {
         inline void write_object(const auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
        
-            auto block_offset_writer = post_output_writer<options_object_offset_type>{ m_output };
+            auto block_offset_writer = post_output_writer<options_offset_type>{ m_output };
             auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };      
             
             const auto block_start_position = m_output.size();
@@ -700,7 +704,7 @@ namespace blopp::impl {
             auto object_write_context = write_context{ m_output, m_reference_map };
             object<value_t>::map(object_write_context, value);
 
-            const auto block_offset = static_cast<options_object_offset_type>(m_output.size() - block_start_position);
+            const auto block_offset = static_cast<options_offset_type>(m_output.size() - block_start_position);
             block_offset_writer.update(block_offset);
 
             property_count_writer.update(object_write_context.m_property_count);
@@ -711,7 +715,7 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            auto block_offset_writer = post_output_writer<options_list_offset_type>{ m_output };
+            auto block_offset_writer = post_output_writer<options_offset_type>{ m_output };
             const auto block_start_position = m_output.size();
 
             constexpr auto element_is_nullable = is_nullable_v<element_t>;
@@ -736,9 +740,35 @@ namespace blopp::impl {
                 }
             }
 
-            const auto block_offset = static_cast<options_list_offset_type>(m_output.size() - block_start_position);
+            const auto block_offset = static_cast<options_offset_type>(m_output.size() - block_start_position);
             block_offset_writer.update(block_offset);
-        }   
+        }
+
+        inline void write_map(const auto& value) {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using key_t = typename value_t::key_type;
+            using mapped_t = typename value_t::mapped_type;
+
+            auto block_offset_writer = post_output_writer<options_offset_type>{ m_output };
+            const auto block_start_position = m_output.size();
+
+            constexpr auto key_is_nullable = is_nullable_v<key_t>;
+            write_data_type<key_is_nullable>(get_data_type<key_t>());
+
+            constexpr auto mapped_is_nullable = is_nullable_v<mapped_t>;
+            write_data_type<mapped_is_nullable>(get_data_type<mapped_t>());
+
+            write_value(static_cast<options_map_element_count_type>(value.size()));
+
+            for (const auto& [key, mapped] : value)
+            {
+                map_impl<true>(key);
+                map_impl<true>(mapped);
+            }
+
+            const auto block_offset = static_cast<options_offset_type>(m_output.size() - block_start_position);
+            block_offset_writer.update(block_offset);
+        }
 
         inline void write_variant(const auto& value) {
             
@@ -815,7 +845,10 @@ namespace blopp::impl {
             else if constexpr (std::is_array_v<value_t> == true) {
                 write_list(std::span(value));
             }
-            else if constexpr (is_std_variant<value_t>() == true) {
+            else if constexpr (is_std_map_v<value_t> == true) {
+                write_map(value);
+            }
+            else if constexpr (is_std_variant_v<value_t> == true) {
                 write_variant(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true) {
@@ -1071,11 +1104,11 @@ namespace blopp::impl {
     private:
 
         using options = TOptions;
+        using options_offset_type = typename options::binary_format_types::offset_type;
         using options_string_size_type = typename options::binary_format_types::string_size_type;
-        using options_object_offset_type = typename options::binary_format_types::object_offset_type;
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
-        using options_list_offset_type = typename options::binary_format_types::list_offset_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
+        using options_map_element_count_type = typename options::binary_format_types::map_element_count_type;
         using options_variant_index_type = typename options::binary_format_types::variant_index_type;
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
@@ -1107,7 +1140,7 @@ namespace blopp::impl {
             return read_fundamental_value(reinterpret_cast<value_t&>(value));
         }
 
-        inline auto read_string(std::string& value) -> std::optional<read_error_code> {
+        inline auto read_string(auto& value) -> std::optional<read_error_code> {
             if (!has_bytes_left(sizeof(options_string_size_type))) {
                 return read_error_code::insufficient_data;
             }
@@ -1220,11 +1253,11 @@ namespace blopp::impl {
         inline auto read_object(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
-            if (!has_bytes_left(sizeof(options_object_offset_type) + sizeof(options_object_property_count_type))) {
+            if (!has_bytes_left(sizeof(options_offset_type) + sizeof(options_object_property_count_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto block_offset = static_cast<size_t>(read_value<options_object_offset_type>());
+            const auto block_offset = static_cast<size_t>(read_value<options_offset_type>());
             if (!has_bytes_left(block_offset)) {
                 return read_error_code::insufficient_data;
             }
@@ -1246,11 +1279,11 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
-            if (!has_bytes_left(sizeof(options_list_offset_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
+            if (!has_bytes_left(sizeof(options_offset_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto block_offset = static_cast<size_t>(read_value<options_list_offset_type>());
+            const auto block_offset = static_cast<size_t>(read_value<options_offset_type>());
             if (!has_bytes_left(block_offset)) {
                 return read_error_code::insufficient_data;
             }
@@ -1264,7 +1297,7 @@ namespace blopp::impl {
 
             if (element_data_type != get_data_type<element_t>()) {
                 return read_error_code::mismatching_type;
-            }           
+            }
 
             const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>());
             if constexpr (is_std_array_v<value_t> == true) {
@@ -1289,6 +1322,66 @@ namespace blopp::impl {
                         return map_error;
                     }
                 }
+            }
+
+            return {};
+        }
+
+        inline auto read_map(auto& value) -> std::optional<read_error_code> {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using key_t = typename value_t::key_type;
+            using mapped_t = typename value_t::mapped_type;
+
+            if (!has_bytes_left(sizeof(options_offset_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
+                return read_error_code::insufficient_data;
+            }
+
+            const auto block_offset = static_cast<size_t>(read_value<options_offset_type>());
+            if (!has_bytes_left(block_offset)) {
+                return read_error_code::insufficient_data;
+            }
+
+            const auto [key_data_type, key_nullable_flag] = read_data_type_with_nullable_flag();
+            constexpr auto key_is_nullable = is_nullable_v<key_t>;
+
+            if (key_is_nullable != key_nullable_flag) {
+                return read_error_code::mismatching_nullable;
+            }
+
+            if (key_data_type != get_data_type<key_t>()) {
+                return read_error_code::mismatching_type;
+            }
+
+            const auto [mapped_data_type, mapped_nullable_flag] = read_data_type_with_nullable_flag();
+            constexpr auto mapped_is_nullable = is_nullable_v<mapped_t>;
+
+            if (mapped_is_nullable != mapped_nullable_flag) {
+                return read_error_code::mismatching_nullable;
+            }
+
+            if (mapped_data_type != get_data_type<mapped_t>()) {
+                return read_error_code::mismatching_type;
+            }
+
+            const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>());
+            
+            clear_container(value);
+
+            for (size_t i = 0; i < element_count; ++i) {
+
+                auto key_value = key_t{};
+
+                if (auto map_error = map_impl<true>(key_value); map_error) {
+                    return map_error;
+                }
+
+                auto mapped_value = mapped_t{};
+
+                if (auto map_error = map_impl<true>(mapped_value); map_error) {
+                    return map_error;
+                }
+
+                value.insert({ std::move(key_value), std::move(mapped_value) });
             }
 
             return {};
@@ -1381,11 +1474,14 @@ namespace blopp::impl {
                 return read_list(value);
             }
             else if constexpr (std::is_array_v<value_t> == true) {
-                [[maybe_unused]] auto array_span = std::span(value);
+                auto array_span = std::span(value);
                 return read_list(array_span);
             }
-            else if constexpr (is_std_variant<value_t>() == true) {
+            else if constexpr (is_std_variant_v<value_t> == true) {
                 return read_variant(value);
+            }
+            else if constexpr (is_std_map_v<value_t> == true) {
+                return read_map(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true)
             {

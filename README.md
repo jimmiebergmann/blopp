@@ -25,6 +25,7 @@ or copy include/blopp.hpp to your project.
 * `enum`
 * `struct`, `class`
 * `std::string`, `std::vector`, `std::list`, `std::array`, `c-style array`
+* `std::map`, `std::multimap`
 * `std::optional`, `std::unique_ptr`, `std::shared_ptr`
 * `std::variant`
 
@@ -130,7 +131,7 @@ struct blopp::object<vec3> {
 ```
 
 Writing this object will result in a file size of `15` bytes, compared to `26` if map method were used.  
-Format is great for small size objects, but is limited to fundamental and std::array data types only.
+Using `format` is great for small size objects, but is limited to fundamental and array data types only.
 
 ## Build tests
 ```
