@@ -22,7 +22,7 @@ struct blopp::object<fuzz_object> {
 };
 
 namespace {
-    TEST(fuzz_fails, fail_1)
+    TEST(fuzz_fails, buffer_overflow_1)
     {
         // FIXED:
         // read_context -> map -> map_impl -> read_list -> read_contiguous_container:
@@ -36,5 +36,41 @@ namespace {
         auto input_span = std::span{ input.data(), input.size() };
         auto result = blopp::read<fuzz_object>(input_span);
         ASSERT_FALSE(result);
+    }
+
+    TEST(fuzz_fails, bad_boolean_value_1)
+    {
+        // FIXED:
+        // Reading a byte with value != 0 or 1 as boolean is UB
+
+        const auto input = std::array<uint8_t, 2>{ 0x01, 0xFF };
+
+        auto input_span = std::span{ input.data(), input.size() };
+        auto result = blopp::read<bool>(input_span);
+        ASSERT_FALSE(result);
+        EXPECT_EQ(result.error(), blopp::read_error_code::bad_boolean_value);
+    }
+
+    TEST(fuzz_fails, bad_boolean_value_2)
+    {
+        // FIXED:
+        // Reading a byte with value != 0 or 1 as boolean is UB
+
+        const auto input = std::array<uint8_t, 19>{ 
+            0x0F, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF };
+
+        auto input_span = std::span{ input.data(), input.size() };
+        auto result1 = blopp::read<std::vector<bool>>(input_span);
+        ASSERT_FALSE(result1);
+        EXPECT_EQ(result1.error(), blopp::read_error_code::bad_boolean_value);
+
+        auto result2 = blopp::read<std::list<bool>>(input_span);
+        ASSERT_FALSE(result2);
+        EXPECT_EQ(result2.error(), blopp::read_error_code::bad_boolean_value);
+
+        auto result3 = blopp::read<std::array<bool, 1>>(input_span);
+        ASSERT_FALSE(result3);
+        EXPECT_EQ(result3.error(), blopp::read_error_code::bad_boolean_value);
     }
 }

@@ -158,7 +158,8 @@ namespace blopp {
         mismatching_object_property_count,
         bad_reference_position,
         bad_reference_type,
-        bad_variant_index
+        bad_variant_index,
+        bad_boolean_value
     };
 
 
@@ -340,7 +341,7 @@ namespace blopp::impl {
     };
 
     template<typename T>
-    constexpr auto object_is_mapped() -> bool {
+    [[nodiscard]] constexpr auto object_is_mapped() -> bool {
         return
             std::is_class_v<T> == true &&
             requires(T & value, dummy_read_write_context dummy) { { blopp::object<T>::map(dummy, value) }; };
@@ -351,7 +352,7 @@ namespace blopp::impl {
     };
 
     template<typename T>
-    constexpr auto object_is_formatted() -> bool {
+    [[nodiscard]] constexpr auto object_is_formatted() -> bool {
         return
             std::is_class_v<T> == true &&
             requires(T & value, dummy_format_read_write_context dummy) { { blopp::object<T>::format(dummy, value) }; };
@@ -359,7 +360,7 @@ namespace blopp::impl {
 
 
     template<typename T>
-    constexpr data_types get_data_type() {
+    [[nodiscard]] constexpr data_types get_data_type() {
         using value_fundamental_traits = fundamental_traits<T>;
         if constexpr (value_fundamental_traits::is_fundamental == true) {
             return value_fundamental_traits::data_type;
@@ -409,7 +410,7 @@ namespace blopp::impl {
     }
 
     template<typename TValue>
-    inline bool nullable_has_value([[maybe_unused]] const TValue& value) {
+    [[nodiscard]] inline bool nullable_has_value([[maybe_unused]] const TValue& value) {
         if constexpr (
             is_std_unique_ptr_v<TValue> == true ||
             is_std_shared_ptr_v<TValue> == true)
@@ -438,6 +439,13 @@ namespace blopp::impl {
             is_std_map_v<container_t> == true)
         {
             container.clear();
+        }
+    }
+    template<typename TContainer>
+    inline void resize_add_container([[maybe_unused]] TContainer& container, [[maybe_unused]] size_t size) {
+        using container_t = std::remove_cvref_t<decltype(container)>;
+        if constexpr (is_std_vector_v<container_t> == true) {
+            container.resize(container.size() + size);
         }
     }
 
@@ -878,13 +886,13 @@ namespace blopp::impl {
             m_input{ input }
         {}
 
-        inline bool has_bytes_left(const size_t count)
+        [[nodiscard]] inline bool has_bytes_left(const size_t count)
         {
             return m_input.size() >= count;
         }
 
         template<typename T>
-        inline bool has_bytes_left(const size_t count)
+        [[nodiscard]] inline bool has_bytes_left(const size_t count)
         {
             constexpr auto max_count = std::numeric_limits<size_t>::max() / sizeof(T);
 
@@ -895,19 +903,19 @@ namespace blopp::impl {
             return m_input.size() >= (count * sizeof(T));
         }
 
-        inline data_types read_data_type() {
+        [[nodiscard]] inline data_types read_data_type() {
             auto next_byte_without_flag = static_cast<uint8_t>(*m_input.data() & 0b01111111);
             m_input = m_input.subspan(sizeof(uint8_t));
             return static_cast<data_types>(next_byte_without_flag);
         }
 
-        inline uint8_t read_nullable_value_flags() {
+        [[nodiscard]] inline uint8_t read_nullable_value_flags() {
             auto value = static_cast<uint8_t>(*m_input.data() & 0b00000011);
             m_input = m_input.subspan(sizeof(uint8_t));
             return value;
         }
 
-        inline std::pair<data_types, bool> read_data_type_with_nullable_flag() {
+        [[nodiscard]] inline std::pair<data_types, bool> read_data_type_with_nullable_flag() {
             auto next_byte = *m_input.data();
             auto next_byte_without_flag = static_cast<uint8_t>(next_byte & 0b01111111);
             auto flag = static_cast<bool>(next_byte & 0b10000000);
@@ -916,29 +924,71 @@ namespace blopp::impl {
         }
 
         template<typename T>
-        inline T read_value() {
-            auto value = T{};
-            std::memcpy(&value, m_input.data(), sizeof(T));
+        inline void read_value(T& value) {
+            if constexpr (sizeof(T) == 1) {
+                value = static_cast<T>(*m_input.data());
+            }
+            else {
+                std::memcpy(&value, m_input.data(), sizeof(T));
+            }
             m_input = m_input.subspan(sizeof(T));
-            return value;
         }
 
         template<typename T>
-        inline void read_value(T& value) {
-            std::memcpy(&value, m_input.data(), sizeof(T));
-            m_input = m_input.subspan(sizeof(T));
+        [[nodiscard]] inline T read_value() {
+            auto value = T{};
+            read_value(value);
+            return value;
         }
 
         template<typename TContainer>
-        inline void read_container(TContainer& container, const size_t count) {
+        [[nodiscard]] inline auto read_bool_container(TContainer& container, const size_t count) -> std::optional<read_error_code> {
+            using container_t = std::remove_cvref_t<decltype(container)>;
+            using element_t = typename container_t::value_type;
+
+            static_assert(std::is_same_v<element_t, bool>, "Wrong element type for blopp::read_bool_container");
+
+            if constexpr (is_std_vector_v< container_t> == true) {
+                resize_add_container(container, count);
+            }
+
+            auto* src_element_ptr = m_input.data();
+            for (size_t i = 0; i < count; i++) {
+                auto raw_boolean_value = *(src_element_ptr++);
+                if (raw_boolean_value > 1) {
+                    return read_error_code::bad_boolean_value;
+                }
+
+                if constexpr (
+                    is_std_vector_v<container_t> == true ||
+                    is_std_array_v<container_t> == true ||
+                    is_std_span_v<container_t> == true)
+                {
+                    container.at(i) = static_cast<bool>(raw_boolean_value);
+                }
+                else {
+                    container.push_back(static_cast<bool>(raw_boolean_value));
+                }
+            }
+
+            return {};
+        }
+
+        template<typename TContainer>
+        [[nodiscard]] inline auto read_container(TContainer& container, const size_t count) -> std::optional<read_error_code> {
             using container_t = std::remove_cvref_t<decltype(container)>;
             using element_t = typename container_t::value_type;
 
             if (count == 0) {
-                return;
+                return {};
             }
 
-            if constexpr (
+            if constexpr (std::is_same_v<element_t, bool> == true) {
+                if (auto error = read_bool_container(container, count); error.has_value()) {
+                    return error;
+                }
+            }
+            else if constexpr (
                 is_std_array_v<container_t> == true ||
                 is_std_span_v<container_t> == true)
             {
@@ -947,12 +997,11 @@ namespace blopp::impl {
                 std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
             }
             else if constexpr (std::contiguous_iterator<typename TContainer::iterator> == true) {
-                size_t old_container_size = container.size();
+                const size_t old_container_size = container.size();
                 container.resize(old_container_size + count);
-
                 const auto* src_element_ptr = m_input.data();
                 auto* dest_element_ptr = container.data() + old_container_size;
-                std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));
+                std::memcpy(dest_element_ptr, src_element_ptr, count * sizeof(element_t));  
             }
             else {
                 auto* src_element_ptr = m_input.data();
@@ -965,6 +1014,7 @@ namespace blopp::impl {
             }
 
             m_input = m_input.subspan(count * sizeof(element_t));
+            return {};
         }
         
         read_input_type& m_input;
@@ -1032,7 +1082,10 @@ namespace blopp::impl {
                 return false;
             }
 
-            read_container(value, value.size());
+            if (m_error = read_container(value, value.size());  m_error.has_value()) {
+                return false;
+            }
+
             return true;
         }
 
@@ -1143,20 +1196,30 @@ namespace blopp::impl {
                 return read_error_code::insufficient_data;
             }
 
-            read_value(value);
+            if constexpr (std::is_same_v<value_t, bool> == true) {
+                auto raw_boolean_value = read_value<uint8_t>();
+                if (raw_boolean_value > 1) {
+                    return read_error_code::bad_boolean_value;
+                }
+                value = static_cast<bool>(raw_boolean_value);
+            }
+            else {
+                read_value(value);
+            }
+            
             return {};
         }
 
-        inline auto read_fundamental(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_fundamental(auto& value) -> std::optional<read_error_code> {
             return read_fundamental_value(value);
         }
 
-        inline auto read_enum(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_enum(auto& value) -> std::optional<read_error_code> {
             using value_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
             return read_fundamental_value(reinterpret_cast<value_t&>(value));
         }
 
-        inline auto read_string(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_string(auto& value) -> std::optional<read_error_code> {
             if (!has_bytes_left(sizeof(options_string_size_type))) {
                 return read_error_code::insufficient_data;
             }
@@ -1168,12 +1231,14 @@ namespace blopp::impl {
             }
 
             value.clear();
-            read_container(value, string_size);
+            if (auto error = read_container(value, string_size); error.has_value()) {
+                return error;
+            }
 
             return {};
         }
 
-        inline auto read_unique_ptr(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_unique_ptr(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::element_type;
 
@@ -1185,7 +1250,7 @@ namespace blopp::impl {
             return map_impl<true>(*value);
         }
 
-        inline auto read_shared_ptr(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_shared_ptr(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::element_type;
 
@@ -1228,7 +1293,7 @@ namespace blopp::impl {
             return map_impl<true>(*value);
         }
 
-        inline auto read_optional(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_optional(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
 
@@ -1241,14 +1306,14 @@ namespace blopp::impl {
         }
 
         template<typename T, typename ... Ts>
-        inline auto read_variant_value(std::variant<Ts...>& value) -> std::optional<read_error_code>
+        [[nodiscard]] inline auto read_variant_value(std::variant<Ts...>& value) -> std::optional<read_error_code>
         {
             value = T{};
             return map_impl<false>(std::get<T>(value));
         }
 
         template<typename ... Ts>
-        inline auto read_variant(std::variant<Ts...>& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_variant(std::variant<Ts...>& value) -> std::optional<read_error_code> {
             if (!has_bytes_left(sizeof(options_variant_index_type))) {
                 return read_error_code::insufficient_data;
             }
@@ -1266,7 +1331,7 @@ namespace blopp::impl {
             return read_variant_error;
         }
 
-        inline auto read_object(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_object(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
             if (!has_bytes_left(sizeof(options_offset_type) + sizeof(options_object_property_count_type))) {
@@ -1290,7 +1355,7 @@ namespace blopp::impl {
             return {};
         }
 
-        inline auto read_list(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_list(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
@@ -1329,7 +1394,9 @@ namespace blopp::impl {
                     return read_error_code::insufficient_data;
                 }
 
-                read_container(value, element_count);
+                if (auto error = read_container(value, element_count); error.has_value()) {
+                    return error;
+                }
             }
             else {
                 for (size_t i = 0; i < element_count; ++i) {
@@ -1343,7 +1410,7 @@ namespace blopp::impl {
             return {};
         }
 
-        inline auto read_map(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_map(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using key_t = typename value_t::key_type;
             using mapped_t = typename value_t::mapped_type;
@@ -1406,7 +1473,7 @@ namespace blopp::impl {
             return {};
         }
 
-        inline auto read_formatted(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto read_formatted(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
             if (!has_bytes_left(sizeof(options_format_size_type))) {
@@ -1426,7 +1493,7 @@ namespace blopp::impl {
         }
 
         template<bool Vskip_data_type>
-        inline auto map_impl(auto& value) -> std::optional<read_error_code> {
+        [[nodiscard]] inline auto map_impl(auto& value) -> std::optional<read_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
