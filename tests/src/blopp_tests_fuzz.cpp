@@ -1,6 +1,7 @@
-#include "blopp.hpp"
+#include "blopp_test.hpp"
 
-namespace  {
+// This test file is only to test if fuzz builds with other compilers than clang.
+namespace {
     using fuzz_variant = std::variant<
         bool,
         char,
@@ -132,12 +133,11 @@ struct blopp::object<fuzz_object_nested> {
     }
 };
 
-
-static volatile auto dummy_result = 0;
-
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    auto input = std::span{ data, size };
-    auto result = blopp::read<fuzz_object>(input);
-    dummy_result = result.has_value() ? 1 : 0;
-    return 0;
+namespace {
+    TEST(fuzz, fuzz)
+    {
+        const auto input = fuzz_object{ };
+        auto input_bytes = blopp::write(input);
+        EXPECT_GT(input_bytes.size(), size_t{ 0 });
+    }
 }

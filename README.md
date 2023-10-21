@@ -54,21 +54,21 @@ struct store {
 // Implement custom object mappers via specializations of blopp::object<T>.
 template<>
 struct blopp::object<product> {
-    static void map(auto& context, auto& value) {
-        context
-            .map(value.id)
-            .map(value.name)
-            .map(value.price)
-            .map(value.unit);
+    static auto map(auto& context, auto& value) {
+        context.map(
+            value.id,
+            value.name,
+            value.price,
+            value.unit);
     }
 };
 
 template<>
 struct blopp::object<store> {
-    static void map(auto& context, auto& value) {
-        context
-            .map(value.name)
-            .map(value.products);
+    static auto map(auto& context, auto& value) {
+        context.map(
+            value.name,
+            value.products);
     }
 };
 

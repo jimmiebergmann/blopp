@@ -1,70 +1,75 @@
 #include "blopp_test.hpp"
 
-struct test_struct {
-    int32_t value_1;
-    bool value_2;
-    float value_3;
-};
+namespace {
+    struct test_struct {
+        int32_t value_1;
+        bool value_2;
+        float value_3;
+    };
+}
 
 template<>
 struct blopp::object<test_struct> {
     static void map(auto& context, auto& value) {
-        context
-            .map(value.value_1)
-            .map(value.value_2)
-            .map(value.value_3);
+        context.map(
+            value.value_1,
+            value.value_2,
+            value.value_3);
     }
 };
 
-using variant_test_type = std::variant<int32_t, float, test_struct>;
+namespace {
 
-TEST(type_variant, ok_variant_index_int) {
-    auto input = variant_test_type{ int32_t{ 123 } };
+    using variant_test_type = std::variant<int32_t, float, test_struct>;
 
-    auto input_bytes = blopp::write(input);
-    auto output_result = blopp::read<variant_test_type>(input_bytes);
-    ASSERT_TRUE(output_result);
+    TEST(type_variant, ok_variant_index_int) {
+        auto input = variant_test_type{ int32_t{ 123 } };
 
-    auto& output = output_result->value;
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<variant_test_type>(input_bytes);
+        ASSERT_TRUE(output_result);
 
-    ASSERT_EQ(output.index(), size_t{ 0 });
-    EXPECT_EQ(std::get<0>(output), int32_t{ 123 });
-}
+        auto& output = output_result->value;
 
-TEST(type_variant, ok_variant_index_float) {
-    auto input = variant_test_type{ 16.0f };
+        ASSERT_EQ(output.index(), size_t{ 0 });
+        EXPECT_EQ(std::get<0>(output), int32_t{ 123 });
+    }
 
-    auto input_bytes = blopp::write(input);
-    auto output_result = blopp::read<variant_test_type>(input_bytes);
-    ASSERT_TRUE(output_result);
+    TEST(type_variant, ok_variant_index_float) {
+        auto input = variant_test_type{ 16.0f };
 
-    auto& output = output_result->value;
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<variant_test_type>(input_bytes);
+        ASSERT_TRUE(output_result);
 
-    ASSERT_EQ(output.index(), size_t{ 1 });
-    EXPECT_EQ(std::get<1>(output), 16.0f);
-}
+        auto& output = output_result->value;
+
+        ASSERT_EQ(output.index(), size_t{ 1 });
+        EXPECT_EQ(std::get<1>(output), 16.0f);
+    }
 
 
-TEST(type_variant, ok_variant_index_struct) {
-    auto input = variant_test_type{ 
-        test_struct{
-            .value_1 = 123,
-            .value_2 = true,
-            .value_3 = 4.0f
-        }
-    };
+    TEST(type_variant, ok_variant_index_struct) {
+        auto input = variant_test_type{
+            test_struct{
+                .value_1 = 123,
+                .value_2 = true,
+                .value_3 = 4.0f
+            }
+        };
 
-    auto input_bytes = blopp::write(input);
-    auto output_result = blopp::read<variant_test_type>(input_bytes);
-    ASSERT_TRUE(output_result);
+        auto input_bytes = blopp::write(input);
+        auto output_result = blopp::read<variant_test_type>(input_bytes);
+        ASSERT_TRUE(output_result);
 
-    auto& output = output_result->value;
+        auto& output = output_result->value;
 
-    ASSERT_EQ(output.index(), size_t{ 2 });
+        ASSERT_EQ(output.index(), size_t{ 2 });
 
-    auto& output_struct = std::get<2>(output);
+        auto& output_struct = std::get<2>(output);
 
-    EXPECT_EQ(output_struct.value_1, 123);
-    EXPECT_EQ(output_struct.value_2, true);
-    EXPECT_EQ(output_struct.value_3, 4.0f);
+        EXPECT_EQ(output_struct.value_1, 123);
+        EXPECT_EQ(output_struct.value_2, true);
+        EXPECT_EQ(output_struct.value_3, 4.0f);
+    }
 }

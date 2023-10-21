@@ -336,7 +336,7 @@ namespace blopp::impl {
         is_std_optional_v<T>;
 
     struct dummy_read_write_context {
-        auto& map(auto&) { return *this; }
+        auto& map(auto& ...) { return *this; }
     };
 
     template<typename T>
@@ -616,9 +616,12 @@ namespace blopp::impl {
         write_context& operator = (const write_context&) = delete;
         write_context& operator = (write_context&&) = delete;
 
-        auto& map(auto& value) {
-            ++m_property_count;
-            map_impl<false>(value);
+        template<typename ... T>
+        auto& map(T& ... value) {
+            static_assert(sizeof...(value) > 0, "Cannot pass 0 parameters to map function of blopp context.");
+
+            (map_impl<false>(value), ...);
+            m_property_count += sizeof...(value);
             return *this;
         }
 
@@ -1088,14 +1091,27 @@ namespace blopp::impl {
         read_context& operator = (const read_context&) = delete;
         read_context& operator = (read_context&&) = delete;
 
-        auto& map(auto& value) {
-            if (m_error.has_value()) {
-                return *this;
+        template<typename ... T>
+        auto& map(T& ... value) {
+            static_assert(sizeof...(value) > 0, "Cannot pass 0 parameters to map function of blopp context.");
+            
+            if constexpr (sizeof...(value) == 1) {
+                if (m_error.has_value()) {
+                    return *this;
+                }
+
+                ((m_error = map_impl<false>(value)), ...);
+                ++m_property_count;
             }
-            ++m_property_count;
-            m_error = map_impl<false>(value);
+            else {
+                
+                (void)((!m_error.has_value() && ((m_error = map_impl<false>(value)), 1)) && ...);
+                m_property_count += sizeof...(value);
+            }           
+
             return *this;
         }
+
 
         inline auto error() const {
             return m_error;
