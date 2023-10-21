@@ -1348,7 +1348,10 @@ namespace blopp::impl {
             using key_t = typename value_t::key_type;
             using mapped_t = typename value_t::mapped_type;
 
-            if (!has_bytes_left(sizeof(options_offset_type) + sizeof(data_types) + sizeof(options_list_element_count_type))) {
+            if (!has_bytes_left(
+                    sizeof(options_offset_type) + sizeof(data_types) + 
+                    sizeof(data_types) + sizeof(options_map_element_count_type)))
+            {
                 return read_error_code::insufficient_data;
             }
 
@@ -1379,7 +1382,7 @@ namespace blopp::impl {
                 return read_error_code::mismatching_type;
             }
 
-            const auto element_count = static_cast<size_t>(read_value<options_list_element_count_type>());
+            const auto element_count = static_cast<size_t>(read_value<options_map_element_count_type>());
             
             clear_container(value);
 
