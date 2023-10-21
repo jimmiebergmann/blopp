@@ -1266,6 +1266,9 @@ namespace blopp::impl {
             }
 
             if (nullable_value_flags & static_cast<uint8_t>(nullable_value_flags::is_reference)) {
+                if (!has_bytes_left(sizeof(uint64_t))) {
+                    return read_error_code::insufficient_data;
+                }
                 const auto position = read_value<uint64_t>();
 
                 auto it = m_reference_map.find(position);
