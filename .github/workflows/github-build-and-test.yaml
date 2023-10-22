@@ -95,8 +95,8 @@ jobs:
       - name: Set up Clang 16
         run: |
           brew install llvm@16
-          /usr/local/opt/llvm/bin/${{ matrix.compiler.cc }} --version
-          /usr/local/opt/llvm/bin/${{ matrix.compiler.cxx }} --version
+          /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cc }} --version
+          /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cxx }} --version
 
       - name: Setup Conan
         run: |
@@ -111,8 +111,8 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
           cmake --build . --config ${{matrix.build_type}}
         env:
-          CC: /usr/local/opt/llvm/bin/${{ matrix.compiler.cc }}
-          CXX: /usr/local/opt/llvm/bin/${{ matrix.compiler.cxx }}
+          CC: /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cc }}
+          CXX: /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cxx }}
 
       - name: Test
         run: |
