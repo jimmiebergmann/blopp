@@ -133,11 +133,13 @@ struct blopp::object<fuzz_object_nested> {
     }
 };
 
+
 namespace {
     TEST(fuzz, fuzz)
     {
         const auto input = fuzz_object{ };
-        auto input_bytes = blopp::write(input);
-        EXPECT_GT(input_bytes.size(), size_t{ 0 });
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+        EXPECT_GT(write_result->size(), size_t{ 0 });
     }
 }

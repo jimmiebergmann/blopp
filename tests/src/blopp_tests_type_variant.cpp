@@ -18,18 +18,20 @@ struct blopp::object<test_struct> {
     }
 };
 
-namespace {
 
+namespace {
     using variant_test_type = std::variant<int32_t, float, test_struct>;
 
     TEST(type_variant, ok_variant_index_int) {
         auto input = variant_test_type{ int32_t{ 123 } };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<variant_test_type>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<variant_test_type>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
 
         ASSERT_EQ(output.index(), size_t{ 0 });
         EXPECT_EQ(std::get<0>(output), int32_t{ 123 });
@@ -38,11 +40,13 @@ namespace {
     TEST(type_variant, ok_variant_index_float) {
         auto input = variant_test_type{ 16.0f };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<variant_test_type>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<variant_test_type>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
 
         ASSERT_EQ(output.index(), size_t{ 1 });
         EXPECT_EQ(std::get<1>(output), 16.0f);
@@ -58,11 +62,13 @@ namespace {
             }
         };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<variant_test_type>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<variant_test_type>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
 
         ASSERT_EQ(output.index(), size_t{ 2 });
 

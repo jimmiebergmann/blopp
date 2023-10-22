@@ -20,6 +20,7 @@ namespace {
     };
 }
 
+
 // Implement custom object mappers via specializations of blopp::object<T>.
 template<>
 struct blopp::object<product> {
@@ -41,9 +42,10 @@ struct blopp::object<store> {
     }
 };
 
+
 namespace {
     TEST(readme, main) {
-        const auto input = store{
+        const auto store_value = store{
             .name = "Fruit store",
             .products = {
                 {
@@ -60,11 +62,14 @@ namespace {
                 }
             }
         };
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<store>(input_bytes);
-        ASSERT_TRUE(output_result);
 
-        auto& output = output_result->value;
+        auto write_result = blopp::write(store_value);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<store>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
 
         EXPECT_STREQ(output.name.c_str(), "Fruit store");
         ASSERT_EQ(output.products.size(), size_t{ 2 });

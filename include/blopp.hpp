@@ -69,6 +69,11 @@ namespace blopp {
         template<typename T = TValue>
         result_wrapper(T&& value) : m_variant(std::move(value)) {}
 
+        result_wrapper(const result_wrapper&) = delete;
+        result_wrapper(result_wrapper&&) = default;
+        result_wrapper& operator = (const result_wrapper&) = delete;
+        result_wrapper& operator = (result_wrapper&&) = default;
+
         TValue& value() { return std::get<0>(m_variant); }
         const TValue& value() const { return std::get<0>(m_variant); }
 
@@ -139,17 +144,19 @@ namespace blopp {
     };
 
 
-    /*enum class write_error_code {
-        string_size_overflow,
+    enum class write_error_code {
+        user_defined_failure,
+        format_size_overflow
+        /*string_size_overflow,
         object_size_overflow,
         object_property_count_overflow,
         list_size_overflow,
         list_element_count_overflow,
-        format_failure,
-        format_size_overflow
-    };*/
+        format_failure*/
+    };
 
     enum class read_error_code {
+        user_defined_failure,
         insufficient_data,
         mismatching_type,
         mismatching_nullable,
@@ -163,7 +170,9 @@ namespace blopp {
     };
 
 
-    using write_result_type = std::vector<uint8_t>;
+    using write_output_type = std::vector<uint8_t>;
+
+    using write_result_type = expected<write_output_type, write_error_code>;
 
     template<typename T>
     [[nodiscard]] auto write(const T& value) -> write_result_type;
@@ -336,6 +345,21 @@ namespace blopp::impl {
         is_std_shared_ptr_v<T> ||
         is_std_optional_v<T>;
 
+    template<typename T>
+    struct value_size_trait {
+        static constexpr size_t size = sizeof(T);
+    };
+
+    template<typename T, size_t Vsize>
+    struct value_size_trait<std::array<T, Vsize>> {
+        static constexpr size_t size = sizeof(T) * Vsize;
+    };
+
+    template<typename T, size_t Vsize>
+    struct value_size_trait<T[Vsize]> {
+        static constexpr size_t size = sizeof(T) * Vsize;
+    };
+
     struct dummy_read_write_context {
         auto& map(auto& ...) { return *this; }
     };
@@ -348,7 +372,7 @@ namespace blopp::impl {
     }
 
     struct dummy_format_read_write_context {
-        auto format(auto&) { return true; }
+        auto format(auto& ...) { return true; }
     };
 
     template<typename T>
@@ -467,7 +491,7 @@ namespace blopp::impl {
 
     public:
 
-        post_output_writer(write_result_type& output) :
+        post_output_writer(write_output_type& output) :
             m_output{ output },
             m_position{ m_output.size() }
         {
@@ -487,7 +511,7 @@ namespace blopp::impl {
 
     private:
 
-        write_result_type& m_output;
+        write_output_type& m_output;
         size_t m_position;
 
     };
@@ -496,7 +520,7 @@ namespace blopp::impl {
 
     protected:
 
-        explicit write_context_base(write_result_type& output) :
+        explicit write_context_base(write_output_type& output) :
             m_output{ output }
         {}
 
@@ -523,7 +547,7 @@ namespace blopp::impl {
             std::copy(container_ptr, container_ptr + container_byte_count, std::back_inserter(m_output));
         }
 
-        write_result_type& m_output;
+        write_output_type& m_output;
 
     };
 
@@ -532,10 +556,14 @@ namespace blopp::impl {
 
     public:
 
+        using options = TOptions;
+        using options_format_size_type = typename options::binary_format_types::format_size_type;
+
         static constexpr auto direction = context_direction::write;
+        static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
 
         explicit write_format_context(
-            write_result_type& output
+            write_output_type& output
         ) :
             write_context_base{ output }
         {}
@@ -545,16 +573,44 @@ namespace blopp::impl {
         write_format_context& operator = (const write_format_context&) = delete;
         write_format_context& operator = (write_format_context&&) = delete;
 
-        [[nodiscard]] bool format(auto& value) {
-            return format_impl(value);
+        template<typename ... T>
+        auto format(T& ... value) -> bool
+        {
+            static_assert(sizeof...(value) > 0, 
+                "Cannot pass 0 parameters to format function of blopp context.");
+
+            constexpr auto total_variadic_size = get_total_variadic_size<T...>();
+
+            static_assert(max_format_size >= total_variadic_size,
+                "Total size of variadics passed to blopp format exceeds max format size");
+
+            if (m_error.has_value()) {
+                return false;
+            }
+
+            if (total_format_size + total_variadic_size > max_format_size) {
+                m_error = write_error_code::format_size_overflow;
+                return false;
+            }
+
+            (format_impl(value), ...);
+
+            total_format_size += total_variadic_size;
+
+            return true;
         }
 
+        [[nodiscard]] inline auto error() const {
+            return m_error;
+        }
+ 
     private:
 
-        using options = TOptions;
-        using options_format_size_type = typename options::binary_format_types::format_size_type;
-        
-        static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
+        template<typename ... T>
+        [[nodiscard]] inline static constexpr size_t get_total_variadic_size()
+        {
+            return (value_size_trait<std::remove_cvref_t<T>>::size + ...);
+        }
 
         [[nodiscard]] inline auto write_array(auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
@@ -569,7 +625,7 @@ namespace blopp::impl {
             write_contiguous_container(value);
         }
 
-        [[nodiscard]] inline auto format_impl(auto& value) -> bool {
+        [[nodiscard]] inline auto format_impl(auto& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
@@ -589,11 +645,10 @@ namespace blopp::impl {
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp format data type.");
             }
-
-            return m_format_size <= max_format_size;
         };
 
-        size_t m_format_size = 0;
+        std::optional<write_error_code> m_error = {};
+        size_t total_format_size = 0;
 
     };
 
@@ -612,7 +667,7 @@ namespace blopp::impl {
         static constexpr auto direction = context_direction::write;
 
         explicit write_context(
-            write_result_type& output,
+            write_output_type& output,
             write_reference_map& reference_map
         ) :
             write_context_base{ output },
@@ -625,12 +680,28 @@ namespace blopp::impl {
         write_context& operator = (write_context&&) = delete;
 
         template<typename ... T>
-        auto& map(T& ... value) {
+        auto map(T& ... value) -> bool {
             static_assert(sizeof...(value) > 0, "Cannot pass 0 parameters to map function of blopp context.");
 
-            (map_impl<false>(value), ...);
-            m_property_count += sizeof...(value);
-            return *this;
+            if constexpr (sizeof...(value) == 1) {
+                if (m_error.has_value()) {
+                    return false;
+                }
+
+                ((m_error = map_impl<false>(value)), ...);
+                ++m_property_count;
+            }
+            else {
+
+                (void)((!m_error.has_value() && ((m_error = map_impl<false>(value)), 1)) && ...);
+                m_property_count += sizeof...(value);
+            }
+
+            return !m_error.has_value();
+        }
+
+        [[nodiscard]] inline auto error() const {
+            return m_error;
         }
 
     private:
@@ -645,7 +716,7 @@ namespace blopp::impl {
         using options_format_size_type = typename options::binary_format_types::format_size_type;
 
         template<typename TValue>
-        inline bool write_nullable_value_flags(const TValue& value) {           
+        [[nodiscard]] inline bool write_nullable_value_flags(const TValue& value) {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
             const auto has_value = nullable_has_value(value);
@@ -678,21 +749,24 @@ namespace blopp::impl {
             }
         }
 
-        inline void write_fundamental(const auto& value) {
+        [[nodiscard]] inline auto write_fundamental(const auto& value) -> std::optional<write_error_code> {
             write_value(value);
+            return {};
         }
 
-        inline void write_enum(const auto& value) {
+        [[nodiscard]] inline auto write_enum(const auto& value) -> std::optional<write_error_code> {
             using underlying_t = std::underlying_type_t<std::remove_cvref_t<decltype(value)>>;
             write_value(static_cast<underlying_t>(value));
+            return {};
         }
 
-        inline void write_string(const auto& value) {
+        [[nodiscard]] inline auto write_string(const auto& value) -> std::optional<write_error_code> {
             write_value(static_cast<options_string_size_type>(value.size()));
             write_contiguous_container(value);
+            return {};
         }
 
-        inline void write_shared_ptr(const auto& value) {
+        [[nodiscard]] inline auto write_shared_ptr(const auto& value) -> std::optional<write_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::element_type;
 
@@ -701,27 +775,46 @@ namespace blopp::impl {
                 .type_index = std::type_index(typeid(element_t))
             });
 
-            map_impl<true>(*value);
+            return map_impl<true>(*value);
         }
 
-        inline void write_object(const auto& value) {
+        [[nodiscard]] inline auto write_object(const auto& value) -> std::optional<write_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
        
             auto block_offset_writer = post_output_writer<options_offset_type>{ m_output };
             auto property_count_writer = post_output_writer<options_object_property_count_type>{ m_output };      
             
             const auto block_start_position = m_output.size();
-
+ 
             auto object_write_context = write_context{ m_output, m_reference_map };
-            object<value_t>::map(object_write_context, value);
 
+            using object_map_result_t = decltype(object<value_t>::map(object_write_context, value));
+
+            if constexpr (std::is_same_v<object_map_result_t, void> == true) {
+                object<value_t>::map(object_write_context, value);
+            }
+            else if constexpr (std::is_same_v<object_map_result_t, bool> == true) {
+                if (!object<value_t>::map(object_write_context, value)) {
+                    return write_error_code::user_defined_failure;
+                };
+            }
+            else {
+                static_assert(always_false<value_t>, "Only void and bool return type of blopp::object<T>::map is supported.");
+            }
+
+            if (object_write_context.m_error) {
+                return object_write_context.m_error.value();
+            }
+ 
             const auto block_offset = static_cast<options_offset_type>(m_output.size() - block_start_position);
             block_offset_writer.update(block_offset);
 
             property_count_writer.update(object_write_context.m_property_count);
+
+            return {};
         }
 
-        inline void write_list(const auto& value) {
+        [[nodiscard]] inline auto write_list(const auto& value) -> std::optional<write_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
@@ -747,15 +840,19 @@ namespace blopp::impl {
             }
             else {
                 for (const auto& element_value : value) {
-                    map_impl<true>(element_value);
+                    if (auto error = map_impl<true>(element_value); error.has_value()) {
+                        return error;
+                    }
                 }
             }
 
             const auto block_offset = static_cast<options_offset_type>(m_output.size() - block_start_position);
             block_offset_writer.update(block_offset);
+
+            return {};
         }
 
-        inline void write_map(const auto& value) {
+        [[nodiscard]] inline auto write_map(const auto& value) -> std::optional<write_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using key_t = typename value_t::key_type;
             using mapped_t = typename value_t::mapped_type;
@@ -773,46 +870,68 @@ namespace blopp::impl {
 
             for (const auto& [key, mapped] : value)
             {
-                map_impl<true>(key);
-                map_impl<true>(mapped);
+                if (auto error = map_impl<true>(key); error.has_value()) {
+                    return error;
+                }
+                if (auto error = map_impl<true>(mapped); error.has_value()) {
+                    return error;
+                }
             }
 
             const auto block_offset = static_cast<options_offset_type>(m_output.size() - block_start_position);
             block_offset_writer.update(block_offset);
+
+            return {};
         }
 
-        inline void write_variant(const auto& value) {
-            
+        [[nodiscard]] inline auto write_variant(const auto& value) -> std::optional<write_error_code> {
             const auto index = value.index();    
             write_value(static_cast<options_variant_index_type>(index));
 
-            std::visit([&](const auto& variant_value) {
-                map_impl<false>(variant_value);
+            return std::visit([&](const auto& variant_value) {
+                return map_impl<false>(variant_value);
             }, value);
         }
 
-        inline void write_formatted(const auto& value) {
+        [[nodiscard]] inline auto write_formatted(const auto& value) -> std::optional<write_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
 
             auto block_size_writer = post_output_writer<options_format_size_type>{ m_output };            
             const auto block_start_position = m_output.size();
 
             auto format_write_context = write_format_context<TOptions>{ m_output };
-            if (!object<value_t>::format(format_write_context, value)) {
-                // return std::unexpected(write_error_code::format_failure); // TODO
-            }
 
-            /*if (format_size > static_cast<size_t>(std::numeric_limits< options_format_size_type>::max()))
-            {
-                // return std::unexpected(write_error_code::format_size_overflow); // TODO
-            }*/
+            using object_format_result_t = decltype(object<value_t>::format(format_write_context, value));
+
+            if constexpr (std::is_same_v<object_format_result_t, void> == true) {
+                object<value_t>::format(format_write_context, value);
+
+                if (auto format_error = format_write_context.error(); format_error.has_value()) {
+                    return format_error.value();
+                }
+            }
+            else if constexpr (std::is_same_v<object_format_result_t, bool> == true) {
+                const auto format_result = object<value_t>::format(format_write_context, value);
+                
+                if (auto format_error = format_write_context.error(); format_error.has_value()) {
+                    return format_error.value();
+                }
+                if (!format_result) {
+                    return write_error_code::user_defined_failure;
+                }
+            }
+            else {
+                static_assert(always_false<value_t>, "Only void and bool return type of blopp::object<T>::format is supported.");
+            }
 
             const auto block_size = static_cast<options_format_size_type>(m_output.size() - block_start_position);
             block_size_writer.update(block_size);
+
+            return {};
         }
 
         template<bool Vskip_data_type>
-        inline void map_impl(auto& value) {
+        [[nodiscard]] inline auto map_impl(auto& value) -> std::optional<write_error_code> {
             using value_t = std::remove_cvref_t<decltype(value)>;
             using value_fundamental_traits = fundamental_traits<value_t>;
 
@@ -824,55 +943,56 @@ namespace blopp::impl {
 
             if constexpr (value_is_nullable == true) {
                 if (!write_nullable_value_flags(value)) {
-                    return;
+                    return {};
                 }
             }
 
             if constexpr (value_fundamental_traits::is_fundamental == true) {
-                write_fundamental(value);
+                return write_fundamental(value);
             }
             else if constexpr (std::is_enum_v<value_t> == true) {
-                write_enum(value);
+                return write_enum(value);
             }
             else if constexpr (is_std_string_v<value_t> == true) {
-                write_string(value);
+                return write_string(value);
             }
             else if constexpr (
                 is_std_unique_ptr_v<value_t> == true ||
                 is_std_optional_v<value_t> == true)
             {
-                map_impl<true>(*value);
+                return map_impl<true>(*value);
             }
             else if constexpr (is_std_shared_ptr_v<value_t> == true) {
-                write_shared_ptr(value);
+                return write_shared_ptr(value);
             }
             else if constexpr (
                 is_std_array_v<value_t> == true ||
                 is_std_vector_v<value_t> == true ||
                 is_std_list_v<value_t> == true)
             {
-                write_list(value);
+                return write_list(value);
             }
             else if constexpr (std::is_array_v<value_t> == true) {
-                write_list(std::span(value));
+                return write_list(std::span(value));
             }
             else if constexpr (is_std_map_v<value_t> == true) {
-                write_map(value);
+                return write_map(value);
             }
             else if constexpr (is_std_variant_v<value_t> == true) {
-                write_variant(value);
+                return write_variant(value);
             }
             else if constexpr (object_is_mapped<value_t>() == true) {
-                write_object(value);
+                return write_object(value);
             }
             else if constexpr (object_is_formatted<value_t>() == true) {
-                write_formatted(value);
+                return write_formatted(value);
             }
             else {
                 static_assert(always_false<value_t>, "Unmapped blopp data type.");
             }
         }
 
+        std::optional<write_error_code> m_error = {};
         options_object_property_count_type m_property_count = 0;
         write_reference_map& m_reference_map;
 
@@ -1027,14 +1147,16 @@ namespace blopp::impl {
 
     public:
 
+        using options = TOptions;
+        using options_format_size_type = typename options::binary_format_types::format_size_type;
+
         static constexpr auto direction = context_direction::write;
+        static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());       
 
         explicit read_format_context(
-            read_input_type& input,
-            std::optional<read_error_code>& error
+            read_input_type& input
         ) :
-            read_context_base{ input },
-            m_error{ error }
+            read_context_base{ input }
         {}
 
         read_format_context(const read_format_context&) = delete;
@@ -1042,16 +1164,32 @@ namespace blopp::impl {
         read_format_context& operator = (const read_format_context&) = delete;
         read_format_context& operator = (read_format_context&&) = delete;
 
-        [[nodiscard]] bool format(auto& value) {
-            return format_impl(value);
+        template<typename ... T>
+        auto format(T& ... value) -> bool {
+            static_assert(sizeof...(value) > 0,
+                "Cannot pass 0 parameters to format function of blopp context.");
+
+            constexpr auto total_variadic_size = get_total_variadic_size<T...>();
+
+            static_assert(max_format_size >= total_variadic_size,
+                "Total size of variadics passed to blopp format exceeds max format size");
+
+            (void)( ( !m_error.has_value() && format_impl(value) ) && ...);
+
+            return !m_error.has_value();
+        }
+
+        [[nodiscard]] inline auto error() const {
+            return m_error;
         }
 
     private:
 
-        using options = TOptions;
-        using options_format_size_type = typename options::binary_format_types::format_size_type;
-
-        static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
+        template<typename ... T>
+        [[nodiscard]] inline static constexpr size_t get_total_variadic_size()
+        {
+            return (value_size_trait<std::remove_cvref_t<T>>::size + ...);
+        }
 
         [[nodiscard]] inline auto read_fundamental(auto& value) -> bool {
             using value_t = std::remove_cvref_t<decltype(value)>;
@@ -1111,7 +1249,7 @@ namespace blopp::impl {
             }
         }
 
-        std::optional<read_error_code>& m_error;
+        std::optional<read_error_code> m_error;
 
     };
 
@@ -1145,12 +1283,12 @@ namespace blopp::impl {
         read_context& operator = (read_context&&) = delete;
 
         template<typename ... T>
-        auto& map(T& ... value) {
+        auto map(T& ... value) -> bool {
             static_assert(sizeof...(value) > 0, "Cannot pass 0 parameters to map function of blopp context.");
             
             if constexpr (sizeof...(value) == 1) {
                 if (m_error.has_value()) {
-                    return *this;
+                    return false;
                 }
 
                 ((m_error = map_impl<false>(value)), ...);
@@ -1162,11 +1300,10 @@ namespace blopp::impl {
                 m_property_count += sizeof...(value);
             }           
 
-            return *this;
+            return !m_error.has_value();
         }
 
-
-        inline auto error() const {
+        [[nodiscard]] inline auto error() const {
             return m_error;
         }
 
@@ -1349,7 +1486,20 @@ namespace blopp::impl {
             skip_input_bytes(sizeof(options_object_property_count_type));
 
             auto object_read_context = read_context{ m_input, m_original_input, m_reference_map };
-            object<value_t>::map(object_read_context, value);
+            
+            using object_map_result_t = decltype(object<value_t>::map(object_read_context, value));
+
+            if constexpr (std::is_same_v<object_map_result_t, void> == true) {
+                object<value_t>::map(object_read_context, value);
+            }
+            else if constexpr (std::is_same_v<object_map_result_t, bool> == true) {
+                if (!object<value_t>::map(object_read_context, value)) {
+                    return read_error_code::user_defined_failure;
+                };
+            }
+            else {
+                static_assert(always_false<value_t>, "Only void and bool return type of blopp::object<T>::map is supported.");
+            }
 
             if (object_read_context.m_error) {
                 return object_read_context.m_error.value();
@@ -1488,11 +1638,32 @@ namespace blopp::impl {
                 return read_error_code::insufficient_data;
             }
 
-            auto format_result = std::optional<read_error_code>{};
-            auto format_read_context = read_format_context<TOptions>{ m_input, format_result };
-            object<value_t>::format(format_read_context, value);
+            auto format_read_context = read_format_context<TOptions>{ m_input };
 
-            return format_result;
+            using object_format_result_t = decltype(object<value_t>::format(format_read_context, value));
+
+            if constexpr (std::is_same_v<object_format_result_t, void> == true) {
+                object<value_t>::format(format_read_context, value);
+
+                if (auto format_error = format_read_context.error(); format_error.has_value()) {
+                    return format_error.value();
+                }
+            }
+            else if constexpr (std::is_same_v<object_format_result_t, bool> == true) {
+                const auto format_result = object<value_t>::format(format_read_context, value);
+
+                if (auto format_error = format_read_context.error(); format_error.has_value()) {
+                    return format_error.value();
+                }
+                if (!format_result) {
+                    return read_error_code::user_defined_failure;
+                }
+            }
+            else {
+                static_assert(always_false<value_t>, "Only void and bool return type of blopp::object<T>::format is supported.");
+            }
+  
+            return {};
         }
 
         template<bool Vskip_data_type>
@@ -1572,12 +1743,10 @@ namespace blopp::impl {
             else if constexpr (is_std_map_v<value_t> == true) {
                 return read_map(value);
             }
-            else if constexpr (object_is_mapped<value_t>() == true)
-            {
+            else if constexpr (object_is_mapped<value_t>() == true) {
                 return read_object(value);
             }
-            else if constexpr (object_is_formatted<value_t>() == true)
-            {
+            else if constexpr (object_is_formatted<value_t>() == true) {
                 return read_formatted(value);
             }
             else {
@@ -1605,7 +1774,7 @@ namespace blopp
 
     template<typename TOptions, typename T>
     [[nodiscard]] auto write(const T& value) -> write_result_type {
-        auto result = write_result_type{};
+        auto result = write_output_type{};
 
         impl::write_reference_map reference_map = {};
 
@@ -1615,6 +1784,11 @@ namespace blopp
         };
 
         context.map(value);
+        
+        if (auto error = context.error(); error) {
+            return make_unexpected<write_output_type, write_error_code>(error.value());
+        }
+
         return result;
     }
 

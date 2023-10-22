@@ -37,16 +37,29 @@ namespace {
     struct vec3_2 {
         float x, y, z;
     };
+
+    struct test_user_defined_failure_ok {
+        int32_t value_1;
+    };
+
+    struct test_user_defined_failure_fail {
+        int32_t value_1;
+    };
+
+    struct test_format_size_overflow {
+        std::array<int32_t, 38> value_1;
+        std::array<int32_t, 38> value_2;
+    };
 }
 
 
 template<>
 struct blopp::object<vec3_1> {
     static auto format(auto& context, const auto& value) {
-        return
-            context.format(value.x) &&
-            context.format(value.y) &&
-            context.format(value.z);
+        context.format(
+            value.x,
+            value.y,
+            value.z);
     }
 };
 
@@ -63,33 +76,64 @@ struct blopp::object<vec3_2> {
 template<>
 struct blopp::object<array_enum_test_1> {
     static auto format(auto& context, auto& value) {
-        return context.format(value.data_2) && context.format(value.data_4);
+        context.format(
+            value.data_2,
+            value.data_4);
     }
 };
 
 template<>
 struct blopp::object<array_enum_test_2> {
     static auto format(auto& context, auto& value) {
-        return context.format(value.data_2) && context.format(value.data_3);
+        context.format(
+            value.data_2,
+            value.data_3);
     }
 };
 
 template<>
 struct blopp::object<array_uint8_test_1> {
     static auto format(auto& context, auto& value) {
-        return context.format(value.low) && context.format(value.high);
+        context.format(
+            value.low,
+            value.high);
     }
 };
 
 template<>
 struct blopp::object<fundamental_test_1> {
     static auto format(auto& context, auto& value) {
-        return 
-            context.format(value.value_bool) && 
-            context.format(value.value_int) && 
-            context.format(value.value_enum);
+        context.format(
+            value.value_bool,
+            value.value_int,
+            value.value_enum);
     }
 };
+
+template<>
+struct blopp::object<test_user_defined_failure_ok> {
+    static auto format(auto& context, auto& value) {
+        context.format(value.value_1);
+        return true;
+    }
+};
+
+template<>
+struct blopp::object<test_user_defined_failure_fail> {
+    static auto format(auto& context, auto& value) {
+        context.format(value.value_1);
+        return false;
+    }
+};
+
+template<>
+struct blopp::object<test_format_size_overflow> {
+    static auto format(auto& context, auto& value) {
+        context.format(value.value_1);
+        context.format(value.value_2);
+    }
+};
+
 
 namespace {
     TEST(type_object_format, ok_fundamental_members) {
@@ -99,13 +143,14 @@ namespace {
             .value_int = int32_t{ 123 },
             .value_enum = enum_test_2::b
         };
-        auto input_bytes = blopp::write(input);
-        EXPECT_EQ(input_bytes.size(), size_t{ 12 });
 
-        auto output_result = blopp::read<fundamental_test_1>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<fundamental_test_1>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         EXPECT_EQ(output.value_bool, input.value_bool);
         EXPECT_EQ(output.value_int, input.value_int);
         EXPECT_EQ(output.value_enum, input.value_enum);
@@ -115,11 +160,13 @@ namespace {
         const auto input_1 = vec3_1{ 1.0f, 2.0f, 3.0f };
         const auto input_2 = vec3_2{ 1.0f, 2.0f, 3.0f };
 
-        auto input_bytes_1 = blopp::write(input_1);
-        EXPECT_EQ(input_bytes_1.size(), size_t{ 15 });
+        auto write_result_1 = blopp::write(input_1);
+        ASSERT_TRUE(write_result_1);
+        EXPECT_EQ(write_result_1->size(), size_t{ 15 });
 
-        auto input_bytes_2 = blopp::write(input_2);
-        EXPECT_EQ(input_bytes_2.size(), size_t{ 26 });
+        auto write_result_2 = blopp::write(input_2);
+        ASSERT_TRUE(write_result_2);
+        EXPECT_EQ(write_result_2->size(), size_t{ 26 });
     }
 
     TEST(type_object_format, ok_array_uint8_members) {
@@ -128,13 +175,15 @@ namespace {
             .low = { 1, 2, 3, 4, 5, 6, 7, 8 },
             .high = { 11, 12, 13, 14, 15, 16 }
         };
-        auto input_bytes = blopp::write(input);
-        EXPECT_EQ(input_bytes.size(), size_t{ 17 });
 
-        auto output_result = blopp::read<array_uint8_test_1>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+        EXPECT_EQ(write_result->size(), size_t{ 17 });     
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<array_uint8_test_1>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         EXPECT_EQ(output.low, input.low);
         EXPECT_EQ(output.high, input.high);
     }
@@ -154,13 +203,14 @@ namespace {
             }
         };
 
-        auto input_bytes = blopp::write(input);
-        EXPECT_EQ(input_bytes.size(), size_t{ 9 });
+        auto write_result = blopp::write(input);
+        EXPECT_EQ(write_result->size(), size_t{ 9 });
+        ASSERT_TRUE(write_result);
 
-        auto output_result = blopp::read<array_enum_test_1>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto read_result = blopp::read<array_enum_test_1>(*write_result);
+        ASSERT_TRUE(read_result);
 
-        auto& output = output_result->value;
+        auto& output = read_result->value;
         EXPECT_EQ(output.data_2, input.data_2);
         EXPECT_EQ(output.data_4, input.data_4);
     }
@@ -179,14 +229,46 @@ namespace {
             }
         };
 
-        auto input_bytes = blopp::write(input);
-        EXPECT_EQ(input_bytes.size(), size_t{ 23 });
+        auto write_result = blopp::write(input);
+        EXPECT_EQ(write_result->size(), size_t{ 23 });
+        ASSERT_TRUE(write_result);
 
-        auto output_result = blopp::read<array_enum_test_2>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto read_result = blopp::read<array_enum_test_2>(*write_result);
+        ASSERT_TRUE(read_result);
 
-        auto& output = output_result->value;
+        auto& output = read_result->value;
         EXPECT_EQ(output.data_2, input.data_2);
         EXPECT_EQ(output.data_3, input.data_3);
     }
+
+    TEST(type_object_format, fail_read_user_defined_failure) {
+        auto write_result = blopp::write(test_user_defined_failure_ok{ 100 });
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_user_defined_failure_fail>(*write_result);
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::user_defined_failure);
+    }
+
+    TEST(type_object_format, fail_write_user_defined_failure) {
+        auto write_result = blopp::write(test_user_defined_failure_fail{ 200 });
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::user_defined_failure);
+    }
+
+    TEST(type_object_format, ok_read_user_defined_failure) {
+        auto write_result = blopp::write(test_user_defined_failure_ok{ 300 });
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_user_defined_failure_ok>(*write_result);
+        ASSERT_TRUE(read_result);
+        EXPECT_EQ(read_result->value.value_1, int32_t{ 300 });
+    }
+
+    TEST(type_object_format, fail_format_size_overflow) {
+        auto write_result = blopp::write<blopp::compact_default_options>(test_format_size_overflow{ });
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::format_size_overflow);
+    }
+
 }

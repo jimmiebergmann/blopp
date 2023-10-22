@@ -2,20 +2,24 @@
 
 namespace {
     TEST(type_string, ok_string) {
-        auto input_bytes = blopp::write(std::string{ "Hello world" });
-        auto output_result = blopp::read<std::string>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(std::string{ "Hello world" });
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::string>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         EXPECT_STREQ(output.c_str(), "Hello world");
     }
 
     TEST(type_string, ok_string_empty) {
-        auto input_bytes = blopp::write(std::string{ "" });
-        auto output_result = blopp::read<std::string>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(std::string{ "" });
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::string>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         EXPECT_STREQ(output.c_str(), "");
     }
 }

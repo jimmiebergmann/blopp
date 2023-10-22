@@ -4,11 +4,13 @@ namespace {
     TEST(type_multimap, ok_int32_string_empty) {
         const auto input = std::multimap<int32_t, std::string>{ };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::multimap<int32_t, std::string>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::multimap<int32_t, std::string>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         ASSERT_EQ(output.size(), size_t{ 0 });
     }
 
@@ -20,11 +22,13 @@ namespace {
             { 33, "This is not the last item." }
         };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::multimap<int32_t, std::string>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::multimap<int32_t, std::string>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         ASSERT_EQ(output.size(), size_t{ 4 });
 
         auto it = output.begin();
@@ -52,11 +56,13 @@ namespace {
             { "key_2", "Neither is this item." }
         };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::multimap<std::string, std::string>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::multimap<std::string, std::string>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         ASSERT_EQ(output.size(), size_t{ 4 });
 
         auto it = output.begin();

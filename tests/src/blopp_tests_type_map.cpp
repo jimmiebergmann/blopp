@@ -4,11 +4,13 @@ namespace {
     TEST(type_map, ok_int32_string_empty) {
         const auto input = std::map<int32_t, std::string>{ };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::map<int32_t, std::string>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::map<int32_t, std::string>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         ASSERT_EQ(output.size(), size_t{ 0 });
     }
 
@@ -19,11 +21,13 @@ namespace {
             { 33, "This is not the last item." }
         };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::map<int32_t, std::string>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::map<int32_t, std::string>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         ASSERT_EQ(output.size(), size_t{ 3 });
 
         auto it = output.begin();
@@ -46,11 +50,13 @@ namespace {
             { "key_2", "This is not the last item." }
         };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::map<std::string, std::string>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<std::map<std::string, std::string>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
         ASSERT_EQ(output.size(), size_t{ 3 });
 
         auto it = output.begin();

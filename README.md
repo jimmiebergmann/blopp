@@ -75,7 +75,7 @@ struct blopp::object<store> {
 // Write and read your data structures.
 int main()
 {
-    const auto input_value = store{
+    const auto store_input = store{
         .name = "Fruit store",
         .products = {
             {
@@ -93,12 +93,13 @@ int main()
         }
     };
 
-    auto input_bytes = blopp::write(input_value);
+    auto write_result = blopp::write(store_input);
+    if(!write_result) { /* Error handling. */}
 
-    auto output_result = blopp::read<store>(input_bytes);
-    if(!output_result) { /* Error handling. */}
+    auto read_result = blopp::read<store>(*write_result);
+    if(!read_result) { /* Error handling. */}
 
-    auto& output_value = output_result->value;
+    auto& store_output = read_result->value;
 }
 ```
 
@@ -111,7 +112,8 @@ Yes, if your compiler supports it, else a small std::expected-like class called 
 Due to limitations of std::expected.
 
 #### How can I map my custom type without representing it as an object?
-Use `format` instead of `map` method in your object template specialization.  
+Use `format` instead of `map` method in your object template specialization. 
+Return void or bool. Returning false will result in blopp::write/read_error_code::`user_defined_failure`.
 Here's an example:
 
 ``` cpp
@@ -122,10 +124,7 @@ struct vec3 {
 template<>
 struct blopp::object<vec3> {
     static auto format(auto& context, auto& value) {
-        return 
-            context.format(value.x) &&
-            context.format(value.y) &&
-            context.format(value.z);
+        context.format(value.x, value.y, value.z);
     }
 };
 ```

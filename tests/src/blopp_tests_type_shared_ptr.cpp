@@ -16,6 +16,7 @@ namespace {
     };
 }
 
+
 template<>
 struct blopp::object<test_struct_fundamentals> {
     static void map(auto& context, auto& value) {
@@ -38,36 +39,46 @@ struct blopp::object<test_struct_unique_ptrs> {
     }
 };
 
+
 namespace {
     TEST(type_shared_ptr, ok_empty) {
         const auto input = std::shared_ptr<int32_t>{};
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::shared_ptr<int32_t>>(input_bytes);
-        ASSERT_TRUE(output_result);
 
-        ASSERT_FALSE(output_result->value);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<std::shared_ptr<int32_t>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        ASSERT_FALSE(read_result->value);
     }
 
     TEST(type_shared_ptr, ok_int32) {
         const auto input = std::make_shared<int32_t>(123);
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::shared_ptr<int32_t>>(input_bytes);
-        ASSERT_TRUE(output_result);
 
-        ASSERT_TRUE(output_result->value);
-        EXPECT_EQ((*output_result->value), int32_t{ 123 });
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<std::shared_ptr<int32_t>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        ASSERT_TRUE(read_result->value);
+        EXPECT_EQ((*read_result->value), int32_t{ 123 });
     }
 
     TEST(type_shared_ptr, ok_struct_fundamentals) {
         const auto input = std::make_shared<test_struct_fundamentals>(123, false, 1.0f);
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::shared_ptr<test_struct_fundamentals>>(input_bytes);
-        ASSERT_TRUE(output_result);
 
-        ASSERT_TRUE(output_result->value);
-        EXPECT_EQ(output_result->value->value_1, int32_t{ 123 });
-        EXPECT_EQ(output_result->value->value_2, int32_t{ false });
-        EXPECT_EQ(output_result->value->value_3, float{ 1.0f });
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<std::shared_ptr<test_struct_fundamentals>>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        ASSERT_TRUE(read_result->value);
+        EXPECT_EQ(read_result->value->value_1, int32_t{ 123 });
+        EXPECT_EQ(read_result->value->value_2, int32_t{ false });
+        EXPECT_EQ(read_result->value->value_3, float{ 1.0f });
     }
 
     TEST(type_shared_ptr, ok_struct_unique_ptrs) {
@@ -79,13 +90,15 @@ namespace {
         input->fundamentals_4 = input->fundamentals_3;
         input->fundamentals_5 = input->fundamentals_1;
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<std::shared_ptr<test_struct_unique_ptrs>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        ASSERT_TRUE(output_result->value);
+        auto read_result = blopp::read<std::shared_ptr<test_struct_unique_ptrs>>(*write_result);
+        ASSERT_TRUE(read_result);
 
-        auto& unique_ptrs = *output_result->value;
+        ASSERT_TRUE(read_result->value);
+
+        auto& unique_ptrs = *read_result->value;
 
         ASSERT_TRUE(unique_ptrs.fundamentals_1);
         EXPECT_NE(unique_ptrs.fundamentals_1, unique_ptrs.fundamentals_2);
@@ -119,12 +132,13 @@ namespace {
         input.emplace_back(fundamentals_2);
         input.emplace_back(fundamentals_1);
 
-        auto input_bytes = blopp::write(input);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto output_result = blopp::read<std::vector<std::shared_ptr<test_struct_fundamentals>>>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto read_result = blopp::read<std::vector<std::shared_ptr<test_struct_fundamentals>>>(*write_result);
+        ASSERT_TRUE(read_result);
 
-        auto& output = output_result->value;
+        auto& output = read_result->value;
 
         ASSERT_EQ(output.size(), size_t{ 5 });
 

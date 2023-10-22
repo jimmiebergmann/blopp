@@ -64,7 +64,7 @@ namespace {
         std::array<int32_t, 5> array_int32;
     };
 
-    struct test_member_count_2_members {
+    /*struct test_member_count_2_members {
         int32_t value_1;
         int32_t value_2;
     };
@@ -73,17 +73,25 @@ namespace {
         int32_t value_1;
         int32_t value_2;
         int32_t value_3;
+    };*/
+
+    struct test_user_defined_failure_ok {
+        int32_t value_1;
+    };
+
+    struct test_user_defined_failure_fail {
+        int32_t value_1;
     };
 }
 
 template<>
 struct blopp::object<test_object_empty> {
-    static void map(auto&, auto&) {}
+    static auto map(auto&, auto&) {}
 };
 
 template<>
 struct blopp::object<test_object_nested_1> {
-    static void map(auto& context, auto& value) {
+    static auto map(auto& context, auto& value) {
         context.map(
             value.nested_value_1,
             value.nested_value_2
@@ -93,14 +101,14 @@ struct blopp::object<test_object_nested_1> {
 
 template<>
 struct blopp::object<test_object_nested_2> {
-    static void map(auto& context, auto& value) {
+    static auto map(auto& context, auto& value) {
         context.map(value.object_nested_1_value);
     }
 };
 
 template<>
 struct blopp::object<test_object_1> {
-    static void map(auto& context, auto& value) {
+    static auto map(auto& context, auto& value) {
         context.map(
             value.bool_value,
             value.int8_value,
@@ -124,7 +132,7 @@ struct blopp::object<test_object_1> {
 };
 
 
-template<>
+/*template<>
 struct blopp::object<test_member_count_2_members> {
     static void map(auto& context, auto& value) {
         context.map(
@@ -135,20 +143,40 @@ struct blopp::object<test_member_count_2_members> {
 
 template<>
 struct blopp::object<test_member_count_3_members> {
-    static void map(auto& context, auto& value) {
+    static auto map(auto& context, auto& value) {
         context.map(
             value.value_1,
             value.value_2,
             value.value_3);
     }
+};*/
+
+template<>
+struct blopp::object<test_user_defined_failure_ok> {
+    static auto map(auto& context, auto& value) {
+        context.map(value.value_1);
+        return true;
+    }
 };
+
+template<>
+struct blopp::object<test_user_defined_failure_fail> {
+    static auto map(auto& context, auto& value) {
+        context.map(value.value_1);
+        return false;
+    }
+};
+
 
 namespace {
     TEST(type_object_map, ok_test_object_empty) {
         const auto input = test_object_empty{};
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<test_object_empty>(input_bytes);
-        ASSERT_TRUE(output_result);
+
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_object_empty>(*write_result);
+        ASSERT_TRUE(read_result);
     }
 
     TEST(type_object_map, ok_test_object_1) {
@@ -178,11 +206,13 @@ namespace {
             .array_int32 = { 1, 2, 3, 4, 5 }
         };
 
-        auto input_bytes = blopp::write(input);
-        auto output_result = blopp::read<test_object_1>(input_bytes);
-        ASSERT_TRUE(output_result);
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
 
-        auto& output = output_result->value;
+        auto read_result = blopp::read<test_object_1>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = read_result->value;
 
         EXPECT_EQ(output.bool_value, input.bool_value);
         EXPECT_EQ(output.int8_value, input.int8_value);
@@ -235,14 +265,17 @@ namespace {
             .array_int32 = { 1, 2, 3, 4, 5 }
         };
 
-        auto input_bytes_1 = blopp::write<blopp::default_options>(input);
-        auto input_bytes_2 = blopp::write<blopp::compact_default_options>(input);
-        ASSERT_TRUE(input_bytes_1.size() > input_bytes_2.size());
+        auto write_result_1 = blopp::write<blopp::default_options>(input);
+        ASSERT_TRUE(write_result_1);
+        auto write_result_2 = blopp::write<blopp::compact_default_options>(input);
+        ASSERT_TRUE(write_result_2);
 
-        auto output_result_1 = blopp::read<blopp::default_options, test_object_1>(input_bytes_1);
-        ASSERT_TRUE(output_result_1);
-        auto output_result_2 = blopp::read<blopp::compact_default_options, test_object_1>(input_bytes_2);
-        ASSERT_TRUE(output_result_2);
+        ASSERT_TRUE(write_result_1->size() > write_result_2->size());
+
+        auto read_result_1 = blopp::read<blopp::default_options, test_object_1>(*write_result_1);
+        ASSERT_TRUE(read_result_1);
+        auto read_result_2 = blopp::read<blopp::compact_default_options, test_object_1>(*write_result_2);
+        ASSERT_TRUE(read_result_2);
     }
 
     TEST(type_object_map, fail_test_object_1_erase_inputs) {
@@ -273,7 +306,10 @@ namespace {
         };
 
         {
-            auto input_bytes = blopp::write(input);
+            auto write_result = blopp::write(input);
+            ASSERT_TRUE(write_result);
+
+            auto& input_bytes = *write_result;
             const auto input_size = input_bytes.size();
 
             for (size_t i = 0; i < input_size; i++) {
@@ -283,7 +319,10 @@ namespace {
             }
         }
         {
-            auto input_bytes = blopp::write(input);
+            auto write_result = blopp::write(input);
+            ASSERT_TRUE(write_result);
+
+            auto& input_bytes = *write_result;
             const auto input_size = input_bytes.size();
 
             for (size_t i = 0; i < input_size; i++) {
@@ -293,6 +332,31 @@ namespace {
             }
         }
     }
+
+    TEST(type_object_map, fail_read_user_defined_failure) {
+        auto write_result = blopp::write(test_user_defined_failure_ok{ 100 });
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_user_defined_failure_fail>(*write_result);
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::user_defined_failure);
+    }
+
+    TEST(type_object_map, fail_write_user_defined_failure) {
+        auto write_result = blopp::write(test_user_defined_failure_fail{ 200 });
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::user_defined_failure);
+    }
+
+    TEST(type_object_map, ok_read_user_defined_failure) {
+        auto write_result = blopp::write(test_user_defined_failure_ok{ 300 });
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_user_defined_failure_ok>(*write_result);
+        ASSERT_TRUE(read_result);
+        EXPECT_EQ(read_result->value.value_1, int32_t{ 300 });
+    }
+
 }
 /*
 TEST(type_object_map, ok_less_members) {
