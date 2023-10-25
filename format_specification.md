@@ -50,11 +50,13 @@ Data types for these types are compile time configurable via traits, but the fol
 
 | name                       | type       |
 | -------------------------- | ---------- |
-| offset_type                | `uint64_t` |
 | string_offset_type         | `uint64_t` |
 | string_char_size_type      | `uint8_t`  |
+| object_offset_type         | `uint64_t` |
 | object_property_count_type | `uint16_t` |
+| list_offset_type           | `uint64_t` |
 | list_element_count_type    | `uint64_t` |
+| map_offset_type            | `uint64_t` |
 | map_element_count_type     | `uint64_t` |
 | variant_index_type         | `uint16_t` |
 | format_size_type           | `uint16_t` |
@@ -146,14 +148,14 @@ Strings are not null-terminated.
 ### `object` layout
 | size                               | type                       | Description                                                |
 | ---------------------------------- | -------------------------- | ---------------------------------------------------------- |
-| offset_type                        | offset_type                | Offset to end of `object properties`, excluding this field |
+| object_offset_type                 | object_offset_type         | Offset to end of `object properties`, excluding this field |
 | sizeof(object_property_count_type) | object_property_count_type | Property count                                             |
 | Size of `object properties`        | `node`[Property count]     | `object properties`                                        |
 
 ### `list` layout
 | size                            | type                    | Description                                            |
 | ------------------------------- | ----------------------- | ------------------------------------------------------ |
-| sizeof(offset_type)             | offset_type             | Offset to end of `list elements`, excluding this field |
+| sizeof(list_offset_type)        | list_offset_type        | Offset to end of `list elements`, excluding this field |
 | 1                               | `data_type`             | Element `data_type`                                    |
 | sizeof(list_element_count_type) | list_element_count_type | Element count                                          |
 | Size of `list elements`         | `node`[Element count]   | `list elements`                                        |
@@ -163,7 +165,7 @@ Strings are not null-terminated.
 ### `map` layout
 | size                           | type                              | Description                                                |
 | ------------------------------ | --------------------------------- | ---------------------------------------------------------- |
-| sizeof(offset_type)            | offset_type                       | Offset to end of `map element pairs`, excluding this field |
+| sizeof(map_offset_type)        | map_offset_type                   | Offset to end of `map element pairs`, excluding this field |
 | 1                              | `data_type`                       | Key `data_type`                                            |
 | 1                              | `data_type`                       | Value `data_type`                                          |
 | sizeof(map_element_count_type) | map_element_count_type            | Element count                                              |

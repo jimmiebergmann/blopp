@@ -1,4 +1,5 @@
 #include "blopp_test.hpp"
+#include "blopp_test_binary_format_types.hpp"
 
 namespace {
 
@@ -276,6 +277,15 @@ namespace {
         ASSERT_TRUE(read_result_1);
         auto read_result_2 = blopp::read<blopp::compact_default_options, test_object_1>(*write_result_2);
         ASSERT_TRUE(read_result_2);
+    }
+
+    TEST(type_object_map, fail_object_offset_overflow) {
+        const auto input = test_object_1{
+           .string_value = std::string(size_t{ 240 }, 'A'),
+        };
+        auto write_result = blopp::write<blopp_test::minimal_options>(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::object_offset_overflow);
     }
 
     TEST(type_object_map, fail_test_object_1_erase_inputs) {

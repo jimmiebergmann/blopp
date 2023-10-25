@@ -1,4 +1,5 @@
 #include "blopp_test.hpp"
+#include "blopp_test_binary_format_types.hpp"
 
 namespace {
     TEST(type_map, ok_int32_string_empty) {
@@ -70,5 +71,17 @@ namespace {
         it = std::next(it);
         EXPECT_STREQ(it->first.c_str(), "key_3");
         EXPECT_STREQ(it->second.c_str(), "Foo bar");
+    }
+
+    TEST(type_map, fail_map_offset_overflow) {
+        const auto input = std::map<std::string, std::string>{
+            { "key_1", std::string(size_t{ 70 }, 'A') },
+            { "key_3", std::string(size_t{ 100 }, 'B') },
+            { "key_2", std::string(size_t{ 130 }, 'C') }
+        };
+
+        auto write_result = blopp::write<blopp_test::minimal_options>(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::map_offset_overflow);
     }
 }
