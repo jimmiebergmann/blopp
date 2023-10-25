@@ -36,8 +36,8 @@ namespace {
     };
 
     struct test_object_nested_1 {
-        int32_t nested_value_1;
-        double nested_value_2;
+        int32_t nested_value_1 = {};
+        double nested_value_2 = {};
     };
 
     struct test_object_nested_2 {
@@ -45,24 +45,24 @@ namespace {
     };
 
     struct test_object_1 {
-        bool bool_value;
-        int8_t int8_value;
-        int16_t int16_value;
-        int32_t int32_value;
-        int64_t int64_value;
-        uint8_t uint8_value;
-        uint16_t uint16_value;
-        uint32_t uint32_value;
-        uint64_t uint64_value;
-        char char_value;
-        float float32_value;
-        double float64_value;
-        std::string string_value;
-        test_object_empty object_empty_value;
-        test_object_nested_2 object_nested_2_value;
-        std::vector<test_object_empty> object_empty_vector;
-        std::list<test_object_empty> object_empty_list;
-        std::array<int32_t, 5> array_int32;
+        bool bool_value = {};
+        int8_t int8_value = {};
+        int16_t int16_value = {};
+        int32_t int32_value = {};
+        int64_t int64_value = {};
+        uint8_t uint8_value = {};
+        uint16_t uint16_value = {};
+        uint32_t uint32_value = {};
+        uint64_t uint64_value = {};
+        char char_value = {};
+        float float32_value = {};
+        double float64_value = {};
+        std::string string_value = {};
+        test_object_empty object_empty_value = {};
+        test_object_nested_2 object_nested_2_value = {};
+        std::vector<test_object_empty> object_empty_vector = {};
+        std::list<test_object_empty> object_empty_list = {};
+        std::array<int32_t, 5> array_int32 = {};
     };
 
     /*struct test_member_count_2_members {
