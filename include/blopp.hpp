@@ -113,7 +113,8 @@ namespace blopp {
 
     struct default_binary_format_types {
         using offset_type = uint64_t;
-        using string_size_type = uint64_t;
+        using string_offset_type = uint64_t;
+        using string_char_size_type = uint8_t;
         using object_property_count_type = uint16_t;
         using list_element_count_type = uint64_t;
         using map_element_count_type = uint64_t;
@@ -123,7 +124,8 @@ namespace blopp {
 
     struct compact_binary_format_types {
         using offset_type = uint32_t;
-        using string_size_type = uint32_t;
+        using string_offset_type = uint32_t;
+        using string_char_size_type = uint8_t;
         using object_property_count_type = uint16_t;
         using list_element_count_type = uint32_t;
         using map_element_count_type = uint32_t;
@@ -146,13 +148,12 @@ namespace blopp {
 
     enum class write_error_code {
         user_defined_failure,
-        format_size_overflow
-        /*string_size_overflow,
+        format_size_overflow,
+        string_size_overflow,
         object_size_overflow,
         object_property_count_overflow,
         list_size_overflow,
-        list_element_count_overflow,
-        format_failure*/
+        list_element_count_overflow
     };
 
     enum class read_error_code {
@@ -160,9 +161,11 @@ namespace blopp {
         insufficient_data,
         mismatching_type,
         mismatching_nullable,
+        mismatching_string_char_size,
         mismatching_reference,
         mismatching_array_size,
         mismatching_object_property_count,
+        bad_string_offset,
         bad_reference_position,
         bad_reference_type,
         bad_variant_index,
@@ -320,7 +323,7 @@ namespace blopp::impl {
     static constexpr bool is_std_list_v = is_specialization_v<T, std::list>;
 
     template<typename T>
-    static constexpr bool is_std_string_v = std::is_same_v<T, std::string>;
+    static constexpr bool is_std_string_v = is_specialization_v<T, std::basic_string>;
 
     template<typename T>
     static constexpr bool is_std_unique_ptr_v = is_specialization_v<T, std::unique_ptr>;
@@ -708,7 +711,8 @@ namespace blopp::impl {
 
         using options = TOptions;
         using options_offset_type = typename options::binary_format_types::offset_type;
-        using options_string_size_type = typename options::binary_format_types::string_size_type;
+        using options_string_offset_type = typename options::binary_format_types::string_offset_type;
+        using options_string_char_size_type = typename options::binary_format_types::string_char_size_type;
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_map_element_count_type = typename options::binary_format_types::map_element_count_type;
@@ -761,7 +765,21 @@ namespace blopp::impl {
         }
 
         [[nodiscard]] inline auto write_string(const auto& value) -> std::optional<write_error_code> {
-            write_value(static_cast<options_string_size_type>(value.size()));
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using char_t = typename value_t::value_type;
+
+            constexpr auto char_size = static_cast<options_string_char_size_type>(sizeof(char_t));
+            constexpr auto max_string_offset = std::numeric_limits<options_string_offset_type>::max();
+            constexpr auto max_string_size = (max_string_offset - sizeof(options_string_char_size_type)) / sizeof(char_t);
+
+            if (value.size() > max_string_size) {
+                return write_error_code::string_size_overflow;
+            }
+
+            const auto string_offset = (value.size() * sizeof(char_t)) + sizeof(options_string_char_size_type);
+
+            write_value(static_cast<options_string_offset_type>(string_offset));
+            write_value(char_size);
             write_contiguous_container(value);
             return {};
         }
@@ -1311,7 +1329,8 @@ namespace blopp::impl {
 
         using options = TOptions;
         using options_offset_type = typename options::binary_format_types::offset_type;
-        using options_string_size_type = typename options::binary_format_types::string_size_type;
+        using options_string_offset_type = typename options::binary_format_types::string_offset_type;
+        using options_string_char_size_type = typename options::binary_format_types::string_char_size_type;
         using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
         using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
         using options_map_element_count_type = typename options::binary_format_types::map_element_count_type;
@@ -1357,17 +1376,30 @@ namespace blopp::impl {
         }
 
         [[nodiscard]] inline auto read_string(auto& value) -> std::optional<read_error_code> {
-            if (!has_bytes_left(sizeof(options_string_size_type))) {
+            using value_t = std::remove_cvref_t<decltype(value)>;
+            using char_t = typename value_t::value_type;
+            
+            if (!has_bytes_left(sizeof(options_string_offset_type) + sizeof(options_string_char_size_type))) {
                 return read_error_code::insufficient_data;
             }
 
-            const auto string_size = static_cast<size_t>(read_value<options_string_size_type>());
+            const auto string_offset = static_cast<size_t>(read_value<options_string_offset_type>());
+            if (string_offset == 0) {
+                return read_error_code::bad_string_offset;
+            }
 
-            if (!has_bytes_left(string_size)) {
+            if (!has_bytes_left(string_offset)) {
                 return read_error_code::insufficient_data;
+            }
+
+            const auto char_size = read_value<options_string_char_size_type>();
+            if (char_size != sizeof(char_t)) {
+                return read_error_code::mismatching_string_char_size;
             }
 
             value.clear();
+
+            const auto string_size = (string_offset - 1) / sizeof(char_t);
             if (auto error = read_container(value, string_size); error.has_value()) {
                 return error;
             }

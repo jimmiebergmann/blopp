@@ -24,7 +24,7 @@ or copy include/blopp.hpp to your project.
     `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
 * `enum`
 * `struct`, `class`
-* `std::string`, `std::vector`, `std::list`, `std::array`, `c-style array`
+* `std::basic_string<T>`, `std::vector`, `std::list`, `std::array`, `c-style array`
 * `std::map`, `std::multimap`
 * `std::optional`, `std::unique_ptr`, `std::shared_ptr`
 * `std::variant`

@@ -50,8 +50,9 @@ Data types for these types are compile time configurable via traits, but the fol
 
 | name                       | type       |
 | -------------------------- | ---------- |
-| string_size_type           | `uint64_t` |
 | offset_type                | `uint64_t` |
+| string_offset_type         | `uint64_t` |
+| string_char_size_type      | `uint8_t`  |
 | object_property_count_type | `uint16_t` |
 | list_element_count_type    | `uint64_t` |
 | map_element_count_type     | `uint64_t` |
@@ -134,10 +135,13 @@ Data types for these types are compile time configurable via traits, but the fol
 | 8    | `double` | Value       |
 
 ### `string` layout
-| size                     | type               | Description      |
-| ------------------------ | ------------------ | ---------------- |
-| sizeof(string_size_type) | string_size_type   | Length of string |
-| Length of string         | `char`             | Value            |
+| size                                       | type                                       | Description                                           |
+| ------------------------------------------ | ------------------------------------------ | ----------------------------------------------------- |
+| sizeof(string_offset_type)                 | string_offset_type                         | Offset to end of `string value`, excluding this field |
+| sizeof(string_char_size_type)              | string_char_size_type                      | Size of each `character`                              |
+| Size of each `character` * (Offset - `1`)  | `character`[(Offset - `1`) /  `character`] | `string value`                                        |
+
+Strings are not null-terminated.
 
 ### `object` layout
 | size                               | type                       | Description                                                |
