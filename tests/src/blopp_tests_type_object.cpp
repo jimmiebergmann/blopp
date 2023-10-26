@@ -152,20 +152,16 @@ struct blopp::object<test_mapped_256_properties> {
 template<>
 struct blopp::object<test_missmatch_property_count_2_properties> {
     static auto map(auto& context, auto& value) {
-        for (size_t i = 0; i < 256; i++) {
-            context.map(value.value_1, value.value_2);
-        }
+        context.map(value.value_1, value.value_2);
     }
 };
 
 template<>
 struct blopp::object<test_single_mapped_missmatch_property_count_3_properties> {
     static auto map(auto& context, auto& value) {
-        for (size_t i = 0; i < 256; i++) {
-            context.map(value.value_1);
-            context.map(value.value_2);
-            context.map(value.value_3);
-        }
+        context.map(value.value_1);
+        context.map(value.value_2);
+        context.map(value.value_3);
     }
 };
 
