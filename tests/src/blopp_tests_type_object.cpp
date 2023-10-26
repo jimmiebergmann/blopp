@@ -73,7 +73,7 @@ namespace {
         int32_t value_3 = 0;
     };
 
-    /*struct test_member_count_2_members {
+    struct test_member_count_2_members {
         int32_t value_1;
         int32_t value_2;
     };
@@ -82,7 +82,7 @@ namespace {
         int32_t value_1;
         int32_t value_2;
         int32_t value_3;
-    };*/
+    };
 
     struct test_user_defined_failure_ok {
         int32_t value_1;
@@ -181,7 +181,7 @@ struct blopp::object<test_multi_mapped_missmatch_property_count_3_properties> {
     }
 };
 
-/*template<>
+template<>
 struct blopp::object<test_member_count_2_members> {
     static void map(auto& context, auto& value) {
         context.map(
@@ -198,7 +198,7 @@ struct blopp::object<test_member_count_3_members> {
             value.value_2,
             value.value_3);
     }
-};*/
+};
 
 template<>
 struct blopp::object<test_user_defined_failure_ok> {
@@ -467,50 +467,38 @@ namespace {
         ASSERT_FALSE(read_result);
         EXPECT_EQ(read_result.error(), blopp::read_error_code::bad_object_excess_bytes);
     }
+
+    TEST(type_object, ok_more_members) {
+        auto object_members_3 = test_member_count_3_members{
+            .value_1 = 1,
+            .value_2 = 2,
+            .value_3 = 3
+        };
+
+        auto write_result = blopp::write(object_members_3);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<allow_more_members_options, test_member_count_2_members>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        auto& output = *read_result;
+        EXPECT_EQ(output.remaining.size(), size_t{ 0 });
+        EXPECT_EQ(output.value.value_1, int32_t{ 1 });
+        EXPECT_EQ(output.value.value_2, int32_t{ 2 });
+    }
+
+    TEST(type_object, fail_more_members) {
+        auto object_members_3 = test_member_count_3_members{
+            .value_1 = 1,
+            .value_2 = 2,
+            .value_3 = 3
+        };
+
+        auto write_result = blopp::write(object_members_3);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<disallow_more_members_options, test_member_count_2_members>(*write_result);
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::mismatching_object_property_count);
+    }
 }
-/*
-TEST(type_object_map, ok_less_members) {
-    auto object_members_3 = test_member_count_3_members{
-        .value_1 = 1,
-        .value_2 = 2,
-        .value_3 = 3
-    };
-
-    auto input_bytes = blopp::write(object_members_3);
-
-    auto output_result = blopp::read<allow_less_members_options, test_member_count_2_members>(input_bytes);
-    ASSERT_TRUE(output_result);
-    EXPECT_EQ(output_result->remaining.size(), size_t{ 0 });
-    EXPECT_EQ(output_result->value.value_1, int32_t{ 1 });
-    EXPECT_EQ(output_result->value.value_2, int32_t{ 2 });
-}
-
-TEST(type_object_map, fail_less_members) {
-    auto object_members_3 = test_member_count_3_members{
-        .value_1 = 1,
-        .value_2 = 2,
-        .value_3 = 3
-    };
-
-    auto input_bytes = blopp::write(object_members_3);
-
-    auto output_result = blopp::read<disallow_less_members_options, test_member_count_2_members>(input_bytes);
-    ASSERT_FALSE(output_result);
-    EXPECT_EQ(output_result.error(), blopp::read_error_code::mismatching_object_property_count);
-}
-
-TEST(type_object_map, ok_more_members) {
-    auto object_members_2 = test_member_count_2_members{
-        .value_1 = 1,
-        .value_2 = 2
-    };
-
-    auto input_bytes = blopp::write(object_members_2);
-
-    auto output_result = blopp::read<allow_more_members_options, test_member_count_3_members>(input_bytes);
-    ASSERT_TRUE(output_result);
-    EXPECT_EQ(output_result->remaining.size(), size_t{ 0 });
-    EXPECT_EQ(output_result->value.value_1, int32_t{ 1 });
-    EXPECT_EQ(output_result->value.value_2, int32_t{ 2 });
-    EXPECT_EQ(output_result->value.value_3, int32_t{ });
-}*/

@@ -1621,6 +1621,12 @@ namespace blopp::impl {
                 }
             }
 
+            if constexpr (options_allow_more_object_members == false) {
+                if (object_read_context.m_property_count < property_count) {
+                    return read_error_code::mismatching_object_property_count;
+                }
+            }
+
             skip_input_bytes(object_offset);
 
             return {};
