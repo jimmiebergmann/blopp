@@ -50,14 +50,14 @@ namespace {
 
     TEST(type_string, fail_string_offset_overflow) {
         auto input = std::string(size_t{ 255 }, 'A');
-        auto write_result = blopp::write<blopp_test::minimal_options>(input);
+        auto write_result = blopp::write<blopp_test::minimal_offset_options>(input);
         ASSERT_FALSE(write_result);
         EXPECT_EQ(write_result.error(), blopp::write_error_code::string_offset_overflow);
     }
 
     TEST(type_string, fail_u16string_offset_overflow) {
         auto input = std::u16string(size_t{ 128 }, char16_t{ 'A' });
-        auto write_result = blopp::write<blopp_test::minimal_options>(input);
+        auto write_result = blopp::write<blopp_test::minimal_offset_options>(input);
         ASSERT_FALSE(write_result);
         EXPECT_EQ(write_result.error(), blopp::write_error_code::string_offset_overflow);
     }

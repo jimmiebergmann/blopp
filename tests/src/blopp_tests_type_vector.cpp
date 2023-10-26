@@ -68,8 +68,16 @@ namespace {
             std::string(size_t{ 130 }, 'C'),
         };
 
-        auto write_result = blopp::write<blopp_test::minimal_options>(input);
+        auto write_result = blopp::write<blopp_test::minimal_offset_options>(input);
         ASSERT_FALSE(write_result);
         EXPECT_EQ(write_result.error(), blopp::write_error_code::list_offset_overflow);
+    }
+
+    TEST(type_vector, fail_list_element_count_overflow) {
+        auto input = std::vector<int32_t>(size_t{ 256 });
+
+        auto write_result = blopp::write<blopp_test::minimal_count_options>(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::list_element_count_overflow);
     }
 }

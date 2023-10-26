@@ -142,4 +142,11 @@ namespace {
         ASSERT_TRUE(write_result);
         EXPECT_GT(write_result->size(), size_t{ 0 });
     }
+
+    TEST(fuzz, fuzz_nullptr_input)
+    {
+        auto read_result = blopp::read<int32_t>(blopp::read_input_type{});
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::insufficient_data);
+    }
 }

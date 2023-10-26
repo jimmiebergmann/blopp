@@ -3,33 +3,20 @@
 
 namespace {
 
-    /*struct allow_less_members_options
-    {
-        using binary_format_types = blopp::default_binary_format_types;
-        static constexpr auto allow_more_object_members = false;
-        static constexpr auto allow_less_object_members = true;
-    };
-
-    struct disallow_less_members_options
-    {
-        using binary_format_types = blopp::default_binary_format_types;
-        static constexpr auto allow_more_object_members = false;
-        static constexpr auto allow_less_object_members = false;
-    };
-
-    struct allow_more_members_options
-    {
-        using binary_format_types = blopp::default_binary_format_types;
+    struct disallow_object_excess_bytes_options : blopp::default_binary_format_types {
+        static constexpr auto allow_object_excess_bytes = false;
         static constexpr auto allow_more_object_members = true;
-        static constexpr auto allow_less_object_members = false;
     };
 
-    struct disallow_more_members_options
-    {
-        using binary_format_types = blopp::default_binary_format_types;
+    struct allow_more_members_options : blopp::default_binary_format_types {
+        static constexpr auto allow_object_excess_bytes = true;
+        static constexpr auto allow_more_object_members = true;
+    };
+
+    struct disallow_more_members_options : blopp::default_binary_format_types {
+        static constexpr auto allow_object_excess_bytes = true;
         static constexpr auto allow_more_object_members = false;
-        static constexpr auto allow_less_object_members = false;
-    };*/
+    };
 
 
     struct test_object_empty {
@@ -63,6 +50,27 @@ namespace {
         std::vector<test_object_empty> object_empty_vector = {};
         std::list<test_object_empty> object_empty_list = {};
         std::array<int32_t, 5> array_int32 = {};
+    };
+
+    struct test_mapped_256_properties {
+        int32_t value = 0;
+    };
+
+    struct test_missmatch_property_count_2_properties {
+        int32_t value_1 = 0;
+        int32_t value_2 = 0;
+    };
+
+    struct test_single_mapped_missmatch_property_count_3_properties {
+        int32_t value_1 = 0;
+        int32_t value_2 = 0;
+        int32_t value_3 = 0;
+    };
+
+    struct test_multi_mapped_missmatch_property_count_3_properties {
+        int32_t value_1 = 0;
+        int32_t value_2 = 0;
+        int32_t value_3 = 0;
     };
 
     /*struct test_member_count_2_members {
@@ -132,6 +140,46 @@ struct blopp::object<test_object_1> {
     }
 };
 
+template<>
+struct blopp::object<test_mapped_256_properties> {
+    static auto map(auto& context, auto& value) {
+        for (size_t i = 0; i < 256; i++) {
+            context.map(value.value);
+        }
+    }
+};
+
+template<>
+struct blopp::object<test_missmatch_property_count_2_properties> {
+    static auto map(auto& context, auto& value) {
+        for (size_t i = 0; i < 256; i++) {
+            context.map(value.value_1, value.value_2);
+        }
+    }
+};
+
+template<>
+struct blopp::object<test_single_mapped_missmatch_property_count_3_properties> {
+    static auto map(auto& context, auto& value) {
+        for (size_t i = 0; i < 256; i++) {
+            context.map(value.value_1);
+            context.map(value.value_2);
+            context.map(value.value_3);
+        }
+    }
+};
+
+template<>
+struct blopp::object<test_multi_mapped_missmatch_property_count_3_properties> {
+    static auto map(auto& context, auto& value) {
+        for (size_t i = 0; i < 256; i++) {
+            context.map(
+                value.value_1,
+                value.value_2,
+                value.value_3);
+        }
+    }
+};
 
 /*template<>
 struct blopp::object<test_member_count_2_members> {
@@ -170,7 +218,7 @@ struct blopp::object<test_user_defined_failure_fail> {
 
 
 namespace {
-    TEST(type_object_map, ok_test_object_empty) {
+    TEST(type_object, ok_test_object_empty) {
         const auto input = test_object_empty{};
 
         auto write_result = blopp::write(input);
@@ -180,7 +228,7 @@ namespace {
         ASSERT_TRUE(read_result);
     }
 
-    TEST(type_object_map, ok_test_object_1) {
+    TEST(type_object, ok_test_object_1) {
         const auto input = test_object_1{
             .bool_value = true,
             .int8_value = 123,
@@ -239,7 +287,7 @@ namespace {
         EXPECT_EQ(output.array_int32, input.array_int32);
     }
 
-    TEST(type_object_map, ok_test_object_1_compare_options) {
+    TEST(type_object, ok_test_object_1_compare_options) {
         const auto input = test_object_1{
             .bool_value = true,
             .int8_value = 123,
@@ -279,16 +327,54 @@ namespace {
         ASSERT_TRUE(read_result_2);
     }
 
-    TEST(type_object_map, fail_object_offset_overflow) {
+    TEST(type_object, fail_object_offset_overflow) {
         const auto input = test_object_1{
            .string_value = std::string(size_t{ 240 }, 'A'),
         };
-        auto write_result = blopp::write<blopp_test::minimal_options>(input);
+        auto write_result = blopp::write<blopp_test::minimal_offset_options>(input);
         ASSERT_FALSE(write_result);
         EXPECT_EQ(write_result.error(), blopp::write_error_code::object_offset_overflow);
     }
 
-    TEST(type_object_map, fail_test_object_1_erase_inputs) {
+    TEST(type_object, fail_write_object_property_count_overflow) {
+        const auto input = test_mapped_256_properties{
+           .value = 1
+        };
+
+        auto write_result = blopp::write<blopp_test::minimal_count_options>(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::object_property_count_overflow);
+    }
+
+    TEST(type_object, fail_read_mismatching_object_property_count_single_mapped) {
+        const auto input = test_missmatch_property_count_2_properties{
+           .value_1 = 1,
+           .value_2 = 2,
+        };
+
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_single_mapped_missmatch_property_count_3_properties>(*write_result);
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::mismatching_object_property_count);
+    }
+
+    TEST(type_object, fail_read_mismatching_object_property_count_multi_mapped) {
+        const auto input = test_missmatch_property_count_2_properties{
+           .value_1 = 1,
+           .value_2 = 2,
+        };
+
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+
+        auto read_result = blopp::read<test_multi_mapped_missmatch_property_count_3_properties>(*write_result);
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::mismatching_object_property_count);
+    }
+
+    TEST(type_object, fail_test_object_1_erase_inputs) {
         const auto input = test_object_1{
             .bool_value = true,
             .int8_value = 123,
@@ -343,7 +429,7 @@ namespace {
         }
     }
 
-    TEST(type_object_map, fail_read_user_defined_failure) {
+    TEST(type_object, fail_read_user_defined_failure) {
         auto write_result = blopp::write(test_user_defined_failure_ok{ 100 });
         ASSERT_TRUE(write_result);
 
@@ -352,13 +438,13 @@ namespace {
         EXPECT_EQ(read_result.error(), blopp::read_error_code::user_defined_failure);
     }
 
-    TEST(type_object_map, fail_write_user_defined_failure) {
+    TEST(type_object, fail_write_user_defined_failure) {
         auto write_result = blopp::write(test_user_defined_failure_fail{ 200 });
         ASSERT_FALSE(write_result);
         EXPECT_EQ(write_result.error(), blopp::write_error_code::user_defined_failure);
     }
 
-    TEST(type_object_map, ok_read_user_defined_failure) {
+    TEST(type_object, ok_read_user_defined_failure) {
         auto write_result = blopp::write(test_user_defined_failure_ok{ 300 });
         ASSERT_TRUE(write_result);
 
@@ -367,6 +453,20 @@ namespace {
         EXPECT_EQ(read_result->value.value_1, int32_t{ 300 });
     }
 
+    TEST(type_object, fail_object_excess_bytes) {
+        auto write_result = blopp::write(test_object_nested_1{ });
+        ASSERT_TRUE(write_result);
+
+        auto modified_input = *write_result;
+
+        ASSERT_EQ(modified_input.size(), 25);
+        modified_input.at(1) += 1; // Increment object block size.
+        modified_input.emplace_back(uint8_t{ 0 }); // Add excess byte.
+
+        auto read_result = blopp::read<disallow_object_excess_bytes_options, test_object_nested_1>(modified_input);
+        ASSERT_FALSE(read_result);
+        EXPECT_EQ(read_result.error(), blopp::read_error_code::bad_object_excess_bytes);
+    }
 }
 /*
 TEST(type_object_map, ok_less_members) {

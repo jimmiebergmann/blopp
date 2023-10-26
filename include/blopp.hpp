@@ -137,16 +137,14 @@ namespace blopp {
         using format_size_type = uint8_t;
     };
 
-    struct default_options {
-        using binary_format_types = default_binary_format_types;
-        static constexpr auto allow_more_object_members = false;
-        static constexpr auto allow_less_object_members = false;
+    struct default_options : default_binary_format_types {
+        static constexpr auto allow_object_excess_bytes = true;
+        static constexpr auto allow_more_object_members = true;
     };
 
-    struct compact_default_options {
-        using binary_format_types = compact_binary_format_types;
-        static constexpr auto allow_more_object_members = false;
-        static constexpr auto allow_less_object_members = false;
+    struct compact_default_options : compact_binary_format_types {
+        static constexpr auto allow_object_excess_bytes = true;
+        static constexpr auto allow_more_object_members = true;
     };
 
 
@@ -159,6 +157,7 @@ namespace blopp {
         list_offset_overflow,
         list_element_count_overflow,
         map_offset_overflow,
+        map_element_count_overflow,
     };
 
     enum class read_error_code {
@@ -172,6 +171,7 @@ namespace blopp {
         mismatching_object_property_count,
         bad_string_offset,
         bad_object_offset,
+        bad_object_excess_bytes,
         bad_list_offset,
         bad_map_offset,
         bad_reference_position,
@@ -568,7 +568,7 @@ namespace blopp::impl {
     private:
 
         using options = TOptions;
-        using options_format_size_type = typename options::binary_format_types::format_size_type;
+        using options_format_size_type = typename options::format_size_type;
         static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
 
     public:      
@@ -675,6 +675,12 @@ namespace blopp::impl {
     template<typename TOptions>
     class write_context : private write_context_base {
 
+    private:
+
+        using options = TOptions;
+        using options_object_property_count_type = typename options::object_property_count_type;
+        constexpr static auto max_object_property_count = std::numeric_limits<options_object_property_count_type>::max();
+
     public:
 
         static constexpr auto direction = context_direction::write;
@@ -705,9 +711,11 @@ namespace blopp::impl {
                 ++m_property_count;
             }
             else {
+                (void)((!m_error.has_value() && ((m_error = map_impl<false>(value)), 1) && (++m_property_count, 1)) && ...);
+            }
 
-                (void)((!m_error.has_value() && ((m_error = map_impl<false>(value)), 1)) && ...);
-                m_property_count += sizeof...(value);
+            if (m_property_count > max_object_property_count) {
+                m_error = write_error_code::object_property_count_overflow;
             }
 
             return !m_error.has_value();
@@ -719,22 +727,22 @@ namespace blopp::impl {
 
     private:
 
-        using options = TOptions;
-        using options_string_offset_type = typename options::binary_format_types::string_offset_type;
-        using options_string_char_size_type = typename options::binary_format_types::string_char_size_type;
-        using options_object_offset_type = typename options::binary_format_types::object_offset_type;
-        using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
-        using options_list_offset_type = typename options::binary_format_types::list_offset_type;
-        using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
-        using options_map_offset_type = typename options::binary_format_types::map_offset_type;
-        using options_map_element_count_type = typename options::binary_format_types::map_element_count_type;
-        using options_variant_index_type = typename options::binary_format_types::variant_index_type;
-        using options_format_size_type = typename options::binary_format_types::format_size_type;
+        using options_string_offset_type = typename options::string_offset_type;
+        using options_string_char_size_type = typename options::string_char_size_type;
+        using options_object_offset_type = typename options::object_offset_type;
+        using options_list_offset_type = typename options::list_offset_type;
+        using options_list_element_count_type = typename options::list_element_count_type;
+        using options_map_offset_type = typename options::map_offset_type;
+        using options_map_element_count_type = typename options::map_element_count_type;
+        using options_variant_index_type = typename options::variant_index_type;
+        using options_format_size_type = typename options::format_size_type;
 
         constexpr static auto max_string_offset = std::numeric_limits<options_string_offset_type>::max();
         constexpr static auto max_object_offset = std::numeric_limits<options_object_offset_type>::max();
         constexpr static auto max_list_offset = std::numeric_limits<options_list_offset_type>::max();
+        constexpr static auto max_list_element_count = std::numeric_limits<options_list_element_count_type>::max();
         constexpr static auto max_map_offset = std::numeric_limits<options_map_offset_type>::max();
+        constexpr static auto max_map_element_count = std::numeric_limits<options_map_element_count_type>::max();
 
         template<typename TValue>
         [[nodiscard]] inline bool write_nullable_value_flags(const TValue& value) {
@@ -846,7 +854,9 @@ namespace blopp::impl {
             }
 
             block_offset_writer.update(static_cast<options_object_offset_type>(block_offset));
-            property_count_writer.update(object_write_context.m_property_count);
+
+            const auto property_count = object_write_context.m_property_count;
+            property_count_writer.update(static_cast<options_object_property_count_type>(property_count));
 
             return {};
         }
@@ -856,13 +866,18 @@ namespace blopp::impl {
             using element_t = typename value_t::value_type;
             using element_fundamental_traits = fundamental_traits<element_t>;
 
+            const auto element_count = value.size();
+            if (element_count > max_list_element_count) {
+                return write_error_code::list_element_count_overflow;
+            }
+
             auto block_offset_writer = post_output_writer<options_list_offset_type>{ m_output };
             const auto block_start_position = m_output.size();
 
             constexpr auto element_is_nullable = is_nullable_v<element_t>;
             write_data_type<element_is_nullable>(get_data_type<element_t>());
 
-            write_value(static_cast<options_list_element_count_type>(value.size()));
+            write_value(static_cast<options_list_element_count_type>(element_count));
 
             if constexpr (element_fundamental_traits::is_fundamental == true) {
                 if constexpr (std::contiguous_iterator<typename value_t::iterator> == true)
@@ -898,6 +913,11 @@ namespace blopp::impl {
             using key_t = typename value_t::key_type;
             using mapped_t = typename value_t::mapped_type;
 
+            const auto element_count = value.size();
+            if (element_count > max_map_element_count) {
+                return write_error_code::map_element_count_overflow;
+            }
+
             auto block_offset_writer = post_output_writer<options_map_offset_type>{ m_output };
             const auto block_start_position = m_output.size();
 
@@ -907,7 +927,7 @@ namespace blopp::impl {
             constexpr auto mapped_is_nullable = is_nullable_v<mapped_t>;
             write_data_type<mapped_is_nullable>(get_data_type<mapped_t>());
 
-            write_value(static_cast<options_map_element_count_type>(value.size()));
+            write_value(static_cast<options_map_element_count_type>(element_count));
 
             for (const auto& [key, mapped] : value)
             {
@@ -1038,7 +1058,7 @@ namespace blopp::impl {
         }
 
         std::optional<write_error_code> m_error = {};
-        options_object_property_count_type m_property_count = 0;
+        size_t m_property_count = 0;
         write_reference_map& m_reference_map;
 
     };
@@ -1193,7 +1213,7 @@ namespace blopp::impl {
     private:
 
         using options = TOptions;
-        using options_format_size_type = typename options::binary_format_types::format_size_type;
+        using options_format_size_type = typename options::format_size_type;
         static constexpr auto max_format_size = static_cast<size_t>(std::numeric_limits<options_format_size_type>::max());
 
     public:   
@@ -1317,9 +1337,12 @@ namespace blopp::impl {
         explicit read_context(
             read_input_type& input,
             read_input_type original_input,
+            size_t max_property_count,
             read_reference_map& reference_map
         ) :
             read_context_base{ input },
+            m_property_count{ 0 },
+            m_max_property_count{ max_property_count },
             m_original_input{ original_input },
             m_reference_map{ reference_map }
         {} 
@@ -1338,14 +1361,21 @@ namespace blopp::impl {
                     return false;
                 }
 
-                ((m_error = map_impl<false>(value)), ...);
                 ++m_property_count;
+                if (m_property_count > m_max_property_count) {
+                    m_error = read_error_code::mismatching_object_property_count;
+                }
+                else {
+                    ((m_error = map_impl<false>(value)), ...);
+                }
             }
-            else {
-                
-                (void)((!m_error.has_value() && ((m_error = map_impl<false>(value)), 1)) && ...);
-                m_property_count += sizeof...(value);
-            }           
+            else {             
+                (void)((!m_error.has_value() && ((++m_property_count <= m_max_property_count), 1) && ((m_error = map_impl<false>(value)), 1)) && ...);
+
+                if (m_property_count > m_max_property_count) {
+                    m_error = read_error_code::mismatching_object_property_count;
+                }
+            }
 
             return !m_error.has_value();
         }
@@ -1357,24 +1387,24 @@ namespace blopp::impl {
     private:
 
         using options = TOptions;
-        using options_string_offset_type = typename options::binary_format_types::string_offset_type;
-        using options_string_char_size_type = typename options::binary_format_types::string_char_size_type;
-        using options_object_offset_type = typename options::binary_format_types::object_offset_type;
-        using options_object_property_count_type = typename options::binary_format_types::object_property_count_type;
-        using options_list_offset_type = typename options::binary_format_types::list_offset_type;
-        using options_list_element_count_type = typename options::binary_format_types::list_element_count_type;
-        using options_map_offset_type = typename options::binary_format_types::map_offset_type;
-        using options_map_element_count_type = typename options::binary_format_types::map_element_count_type;
-        using options_variant_index_type = typename options::binary_format_types::variant_index_type;
-        using options_format_size_type = typename options::binary_format_types::format_size_type;
+        using options_object_property_count_type = typename options::object_property_count_type;
+        using options_string_offset_type = typename options::string_offset_type;
+        using options_string_char_size_type = typename options::string_char_size_type;
+        using options_object_offset_type = typename options::object_offset_type;
+        using options_list_offset_type = typename options::list_offset_type;
+        using options_list_element_count_type = typename options::list_element_count_type;
+        using options_map_offset_type = typename options::map_offset_type;
+        using options_map_element_count_type = typename options::map_element_count_type;
+        using options_variant_index_type = typename options::variant_index_type;
+        using options_format_size_type = typename options::format_size_type;
 
         constexpr static auto min_string_offset = sizeof(options_string_char_size_type);
         constexpr static auto min_object_offset = sizeof(options_object_property_count_type);
         constexpr static auto min_list_offset = sizeof(data_types) + sizeof(options_list_element_count_type);
         constexpr static auto min_map_offset = sizeof(data_types) + sizeof(data_types) + sizeof(options_map_element_count_type);
 
+        static constexpr auto options_allow_object_excess_bytes = options::allow_object_excess_bytes;
         static constexpr auto options_allow_more_object_members = options::allow_more_object_members;
-        static constexpr auto options_allow_less_object_members = options::allow_less_object_members;
 
         inline void skip_input_bytes(const size_t byte_count) {
             m_input = m_input.subspan(byte_count);
@@ -1555,27 +1585,43 @@ namespace blopp::impl {
                 return read_error_code::insufficient_data;
             }
 
-            skip_input_bytes(sizeof(options_object_property_count_type));
+            const auto property_count = static_cast<size_t>(read_value<options_object_property_count_type>());
 
-            auto object_read_context = read_context{ m_input, m_original_input, m_reference_map };
+            const auto object_offset = block_offset - sizeof(options_object_property_count_type);
+
+            auto object_input = m_input.subspan(0, object_offset);
+            auto object_read_context = read_context{ object_input, m_original_input, property_count, m_reference_map };
             
             using object_map_result_t = decltype(object<value_t>::map(object_read_context, value));
 
             if constexpr (std::is_same_v<object_map_result_t, void> == true) {
                 object<value_t>::map(object_read_context, value);
+
+                if (object_read_context.m_error) {
+                    return object_read_context.m_error.value();
+                }
             }
             else if constexpr (std::is_same_v<object_map_result_t, bool> == true) {
-                if (!object<value_t>::map(object_read_context, value)) {
+                const auto map_result = object<value_t>::map(object_read_context, value);
+
+                if (object_read_context.m_error) {
+                    return object_read_context.m_error.value();
+                }
+                if (!map_result) {
                     return read_error_code::user_defined_failure;
-                };
+                }
             }
             else {
                 static_assert(always_false<value_t>, "Only void and bool return type of blopp::object<T>::map is supported.");
             }
 
-            if (object_read_context.m_error) {
-                return object_read_context.m_error.value();
+            if constexpr (options_allow_object_excess_bytes == false) {
+                if (!object_input.empty()) {
+                    return read_error_code::bad_object_excess_bytes;
+                }
             }
+
+            skip_input_bytes(object_offset);
 
             return {};
         }
@@ -1835,7 +1881,8 @@ namespace blopp::impl {
         }
 
         std::optional<read_error_code> m_error = {};
-        uint16_t m_property_count = 0;   
+        size_t m_property_count;
+        size_t m_max_property_count;
         read_input_type m_original_input;
         read_reference_map& m_reference_map;
 
@@ -1888,6 +1935,7 @@ namespace blopp
         auto context = impl::read_context<TOptions>{ 
             input_remaining,
             input_remaining,
+            1,
             reference_map
         };
 
