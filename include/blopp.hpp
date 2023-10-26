@@ -707,8 +707,8 @@ namespace blopp::impl {
                     return false;
                 }
 
-                ((m_error = map_impl<false>(value)), ...);
                 ++m_property_count;
+                ((m_error = map_impl<false>(value)), ...);
             }
             else {
                 (void)((!m_error.has_value() && (++m_property_count, m_error = map_impl<false>(value), 1) ) && ...);
