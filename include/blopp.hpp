@@ -711,7 +711,7 @@ namespace blopp::impl {
                 ++m_property_count;
             }
             else {
-                (void)((!m_error.has_value() && ((m_error = map_impl<false>(value)), 1) && (++m_property_count, 1)) && ...);
+                (void)((!m_error.has_value() && (++m_property_count, m_error = map_impl<false>(value), 1) ) && ...);
             }
 
             if (m_property_count > max_object_property_count) {
@@ -1370,7 +1370,7 @@ namespace blopp::impl {
                 }
             }
             else {             
-                (void)((!m_error.has_value() && (++m_property_count <= m_max_property_count) && ((m_error = map_impl<false>(value)), 1)) && ...);
+                (void)((!m_error.has_value() && (++m_property_count <= m_max_property_count) && (m_error = map_impl<false>(value), 1) ) && ...);
 
                 if (!m_error.has_value() && m_property_count > m_max_property_count) {
                     m_error = read_error_code::mismatching_object_property_count;
