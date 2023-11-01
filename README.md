@@ -21,10 +21,10 @@ or copy include/blopp.hpp to your project.
 ## Supported types
 * Fundamental data types, including 
     `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
-    `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
+    `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`, `size_t`
 * `enum`
 * `struct`, `class`
-* `std::basic_string<T>`, `std::vector`, `std::list`, `std::array`, `c-style array`
+* `std::basic_string`, `std::vector`, `std::list`, `std::array`, `c-style array`
 * `std::map`, `std::multimap`
 * `std::optional`, `std::unique_ptr`, `std::shared_ptr`
 * `std::variant`
@@ -93,10 +93,10 @@ int main()
         }
     };
 
-    auto write_result = blopp::write(store_input);
+    auto write_result = blopp::write(store_input /*, file_path*/);
     if(!write_result) { /* Error handling. */}
 
-    auto read_result = blopp::read<store>(*write_result);
+    auto read_result = blopp::read<store>(*write_result /*or file_path*/);
     if(!read_result) { /* Error handling. */}
 
     auto& store_output = read_result->value;

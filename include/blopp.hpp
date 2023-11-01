@@ -27,6 +27,7 @@
 #define BLOPP_INCLUDE_BLOPP_HPP
 
 //#define BLOPP_USE_RESULT_WRAPPER
+//#define BLOPP_NO_FILESYSTEM
 
 #if __has_include(<expected>) && !defined(BLOPP_USE_RESULT_WRAPPER)
 #include <expected>
@@ -51,6 +52,12 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <cstring>
+
+#if !defined(BLOPP_NO_FILESYSTEM)
+#include <filesystem>
+#include <fstream>
+#include <ostream>
+#endif
 
 #if !defined(__cpp_lib_expected) || defined(BLOPP_USE_RESULT_WRAPPER)
 #define BLOPP_EXPECTED_IS_RESULT_WRAPPER
@@ -149,6 +156,7 @@ namespace blopp {
 
 
     enum class write_error_code {
+        cannot_open_file,
         user_defined_failure,
         format_size_overflow,
         string_offset_overflow,
@@ -161,6 +169,7 @@ namespace blopp {
     };
 
     enum class read_error_code {
+        cannot_open_file,
         user_defined_failure,
         insufficient_data,
         mismatching_type,
@@ -182,7 +191,6 @@ namespace blopp {
 
 
     using write_output_type = std::vector<uint8_t>;
-
     using write_result_type = expected<write_output_type, write_error_code>;
 
     template<typename T>
@@ -191,6 +199,23 @@ namespace blopp {
     template<typename TOptions, typename T>
     [[nodiscard]] auto write(const T& value) -> write_result_type;
 
+#if !defined(BLOPP_NO_FILESYSTEM)
+
+    using write_void_result_type = expected<void, write_error_code>;
+
+    template<typename T>
+    [[nodiscard]] auto write(const T& value, std::ostream& stream) -> write_void_result_type;
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto write(const T& value, std::ostream& stream) -> write_void_result_type;
+
+    template<typename T>
+    [[nodiscard]] auto write(const T& value, const std::filesystem::path& path) -> write_void_result_type;
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto write(const T& value, const std::filesystem::path& path) -> write_void_result_type;
+
+#endif
 
     using read_input_type = std::span<const uint8_t>;
 
@@ -212,6 +237,21 @@ namespace blopp {
     template<typename TOptions, typename T>
     [[nodiscard]] auto read(read_input_type input) -> read_result_type<T>;
 
+#if !defined(BLOPP_NO_FILESYSTEM)
+
+    template<typename T>
+    [[nodiscard]] auto read(std::istream& stream) -> read_result_type<T>;
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(std::istream& stream) -> read_result_type<T>;
+
+    template<typename T>
+    [[nodiscard]] auto read(const std::filesystem::path& path) -> read_result_type<T>;
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(const std::filesystem::path& path) -> read_result_type<T>;
+
+#endif
 
     template<typename T>
     struct object;
@@ -220,6 +260,7 @@ namespace blopp {
         read,
         write
     };
+
 }
 
 
@@ -1926,6 +1967,41 @@ namespace blopp
     }
 
 
+#if !defined(BLOPP_NO_FILESYSTEM)
+
+    template<typename T>
+    [[nodiscard]] auto write(const T& value, std::ostream& stream) -> write_void_result_type {
+        return  write<default_options, T>(value, stream);
+    } 
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto write(const T& value, std::ostream& stream) -> write_void_result_type {
+        auto result = write<TOptions, T>(value);
+        if (!result) {
+            return make_unexpected<write_output_type, write_error_code>(result.error());
+        }
+
+        stream.write(reinterpret_cast<const char*>(result->data()), result->size());
+        return {};
+    }
+
+    template<typename T>
+    [[nodiscard]] auto write(const T& value, const std::filesystem::path& path) -> write_void_result_type {
+        return write<default_options, T>(value, path);
+    }
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto write(const T& value, const std::filesystem::path& path) -> write_void_result_type {
+        std::ofstream stream(path, std::ofstream::binary);
+        if (!stream.is_open()) {
+            return make_unexpected<write_output_type, write_error_code>(write_error_code::cannot_open_file);
+        }
+
+        return write<TOptions, T>(value, stream);
+    }
+
+#endif
+
     template<typename T>
     [[nodiscard]] auto read(read_input_type input) -> read_result_type<T> {
         return read<default_options, T>(input);
@@ -1954,6 +2030,46 @@ namespace blopp
         result.remaining = input_remaining;
         return result;
     }
+
+#if !defined(BLOPP_NO_FILESYSTEM)
+
+    template<typename T>
+    [[nodiscard]] auto read(std::istream& stream) -> read_result_type<T> {
+        return read<default_options, T>(stream);
+    }
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(std::istream& stream) -> read_result_type<T> {
+        const auto streamStart = stream.tellg();
+        stream.seekg(0, std::istream::end);
+        const auto streamEnd = stream.tellg();
+        stream.seekg(streamStart, std::istream::beg);
+        const auto fileSize = streamEnd - streamStart;
+
+        auto data = std::vector<uint8_t>{ };
+        data.resize(fileSize);
+
+        stream.read(reinterpret_cast<char*>(data.data()), data.size());
+
+        return read<TOptions, T>(data);
+    }
+
+    template<typename T>
+    [[nodiscard]] auto read(const std::filesystem::path& path) -> read_result_type<T> {
+        return read<default_options, T>(path);
+    }
+
+    template<typename TOptions, typename T>
+    [[nodiscard]] auto read(const std::filesystem::path& path) -> read_result_type<T> {
+        std::ifstream stream(path, std::ios::binary);
+        if (!stream.is_open()) {
+            return make_unexpected<read_result<T>, read_error_code>(read_error_code::cannot_open_file);
+        }
+
+        return read<TOptions, T>(stream);
+    }
+
+#endif
 
 }
 
