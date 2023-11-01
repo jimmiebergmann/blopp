@@ -2,7 +2,7 @@
 
 namespace {
     struct my_test_object {
-        size_t id = 0;
+        uint64_t id = 0;
         std::string name = {};      
     };
 }

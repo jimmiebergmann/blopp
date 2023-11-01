@@ -273,15 +273,4 @@ namespace {
             EXPECT_EQ(read_result->value, double{ 512.0 });
         }
     }
-
-    TEST(type_fundamentals, ok_size_t) {
-        {
-            auto write_result = blopp::write(size_t{ 1234567 });
-            ASSERT_TRUE(write_result);
-
-            auto read_result = blopp::read<size_t>(*write_result);
-            ASSERT_TRUE(read_result);
-            EXPECT_EQ(read_result->value, size_t{ 1234567 });
-        }
-    }
 }

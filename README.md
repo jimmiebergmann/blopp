@@ -69,6 +69,10 @@ struct blopp::object<store> {
         context.map(
             value.name,
             value.products);
+
+        // Same as:
+        // context.map(value.name);
+        // context.map(value.products);
     }
 };
 
@@ -110,6 +114,10 @@ Yes, if your compiler supports it, else a small std::expected-like class called 
 
 #### Why isn't c-style arrays supported at root? 
 Due to limitations of std::expected.
+
+#### How can I convert members of my custom struct while writing/reading? 
+Use `context.map_as<T>` instead of `context.map`.  
+`blopp::read` and `blopp::write` will return blopp::write/read_error_code::`conversion_overflow` if conversion results in an integer over or under-flow.
 
 #### How can I map my custom type without representing it as an object?
 Use `format` instead of `map` method in your object template specialization. 

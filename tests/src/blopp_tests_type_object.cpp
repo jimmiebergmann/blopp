@@ -116,6 +116,14 @@ namespace {
     struct test_user_defined_failure_fail {
         int32_t value_1;
     };
+
+    struct test_map_as {
+        uint32_t value_ui32_as_ui32 = {};
+        uint32_t value_ui32_as_ui16 = {};
+        uint32_t value_ui32_as_f32 = {};
+        double value_f64_as_i32 = {};
+        double value_f64_as_f32 = {};
+    };
 }
 
 template<>
@@ -259,6 +267,17 @@ struct blopp::object<test_user_defined_failure_fail> {
     static auto map(auto& context, auto& value) {
         context.map(value.value_1);
         return false;
+    }
+};
+
+template<>
+struct blopp::object<test_map_as> {
+    static auto map(auto& context, auto& value) {
+        context.map_as<uint32_t>(value.value_ui32_as_ui32);
+        context.map_as<uint16_t>(value.value_ui32_as_ui16);
+        context.map_as<float>(value.value_ui32_as_f32);
+        context.map_as<int32_t>(value.value_f64_as_i32);
+        context.map_as<float>(value.value_f64_as_f32);
     }
 };
 
@@ -545,4 +564,60 @@ namespace {
         ASSERT_FALSE(read_result);
         EXPECT_EQ(read_result.error(), blopp::read_error_code::mismatching_object_property_count);
     }
+
+    TEST(type_object, ok_map_as) {
+        auto input = test_map_as{
+            .value_ui32_as_ui32  = 123,
+            .value_ui32_as_ui16 = 2000,
+            .value_ui32_as_f32 = 64,
+            .value_f64_as_i32 = 16.0,
+            .value_f64_as_f32 = 8.0,
+        };
+
+        auto write_result = blopp::write(input);
+        ASSERT_TRUE(write_result);
+        EXPECT_EQ(write_result->size(), size_t{ 34 });
+
+        auto read_result = blopp::read<test_map_as>(*write_result);
+        ASSERT_TRUE(read_result);
+
+        const auto& output = read_result->value;
+        EXPECT_EQ(output.value_ui32_as_ui32, input.value_ui32_as_ui32);
+        EXPECT_EQ(output.value_ui32_as_ui16, input.value_ui32_as_ui16);
+        EXPECT_EQ(output.value_ui32_as_f32, input.value_ui32_as_f32);
+        EXPECT_EQ(output.value_f64_as_i32, input.value_f64_as_i32);
+        EXPECT_EQ(output.value_f64_as_f32, input.value_f64_as_f32);
+    }
+
+    TEST(type_object, fail_map_as_1) {
+        auto input = test_map_as{
+            .value_ui32_as_ui16 = uint32_t{ 70000 }
+        };
+
+        auto write_result = blopp::write(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::conversion_overflow);
+    }
+
+    TEST(type_object, fail_map_as_2) {
+        auto input = test_map_as{
+            .value_f64_as_i32 = 1234567891234.0
+        };
+
+        auto write_result = blopp::write(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::conversion_overflow);
+    }
+
+    TEST(type_object, fail_map_as_overflow) {
+        auto input = test_map_as{
+            .value_ui32_as_ui16 = uint32_t{ 123456 }
+        };
+
+        auto write_result = blopp::write(input);
+        ASSERT_FALSE(write_result);
+        EXPECT_EQ(write_result.error(), blopp::write_error_code::conversion_overflow);
+
+    }    
+
 }

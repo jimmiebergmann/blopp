@@ -188,6 +188,7 @@ namespace blopp {
     enum class write_error_code {
         cannot_open_file,
         user_defined_failure,
+        conversion_overflow,
         format_size_overflow,
         string_offset_overflow,
         object_offset_overflow,
@@ -202,6 +203,7 @@ namespace blopp {
         cannot_open_file,
         user_defined_failure,
         insufficient_data,
+        conversion_overflow,
         mismatching_type,
         mismatching_nullable,
         mismatching_string_char_size,
@@ -328,15 +330,6 @@ namespace blopp::impl {
         has_value_and_is_reference = 3
     };
 
-    template<bool Vcondition>
-    [[nodiscard]] constexpr data_types coditional_data_type(const data_types true_data_type, const data_types false_data_type) {
-        if constexpr (Vcondition == true) {
-            return true_data_type;
-        }
-        else {
-            return false_data_type;
-        }
-    }
 
     template<data_types Vdata_type>
     struct fundamental_traits_base {
@@ -375,20 +368,6 @@ namespace blopp::impl {
     struct fundamental_traits<float> : fundamental_traits_base< data_types::float32> {};
     template<>
     struct fundamental_traits<double> : fundamental_traits_base< data_types::float64> {};
-
-    template<>
-    struct fundamental_traits<long>
-    {
-        static constexpr auto is_fundamental = true;
-        static constexpr auto data_type = coditional_data_type<sizeof(long) == 8>(data_types::int64, data_types::int32);
-    };
-
-    template<>
-    struct fundamental_traits<unsigned long>
-    {
-        static constexpr auto is_fundamental = true;
-        static constexpr auto data_type = coditional_data_type<sizeof(unsigned long) == 8>(data_types::uint64, data_types::uint32);
-    };
 
 
     template<typename T, template<typename...> typename TRef>
@@ -466,7 +445,11 @@ namespace blopp::impl {
     };
 
     struct dummy_read_write_context {
-        auto& map(auto& ...) { return *this; }
+        static constexpr auto direction = context_direction::write;
+        auto map(auto& ...) { return true; }
+
+        template<typename Tas, typename T>
+        auto map_as(T&) { }
     };
 
     template<typename T>
@@ -477,6 +460,7 @@ namespace blopp::impl {
     }
 
     struct dummy_format_read_write_context {
+        static constexpr auto direction = context_direction::write;
         auto format(auto& ...) { return true; }
     };
 
@@ -487,6 +471,42 @@ namespace blopp::impl {
             requires(T & value, dummy_format_read_write_context dummy) { { blopp::object<T>::format(dummy, value) }; };
     }
 
+    template<typename Tfrom, typename Tto>
+    constexpr auto conversion_overflows(const Tfrom from) -> bool {
+        if constexpr (std::is_signed_v<Tfrom> == false && std::is_signed_v<Tto> == false) {
+            return 
+                static_cast<uint64_t>(from) > static_cast<uint64_t>(std::numeric_limits<Tto>::max());
+        }
+        else if constexpr (std::is_signed_v<Tfrom> == true && std::is_signed_v<Tto> == true) {
+            if constexpr (std::is_floating_point_v< Tto> == true) {
+                return false;
+            }
+            else {
+                return
+                    static_cast<int64_t>(from) > static_cast<int64_t>(std::numeric_limits<Tto>::max()) ||
+                    static_cast<int64_t>(from) < static_cast<int64_t>(std::numeric_limits<Tto>::min());
+            }
+
+            
+        }
+        else if constexpr (std::is_signed_v<Tfrom> == true && std::is_signed_v<Tto> == false) {
+            return 
+                from < Tfrom{} ||
+                static_cast<uint64_t>(from) > static_cast<uint64_t>(std::numeric_limits<Tto>::max());
+        }
+        else if constexpr (std::is_signed_v<Tfrom> == false && std::is_signed_v<Tto> == true) {
+            if constexpr (std::is_floating_point_v< Tto> == true) {
+                return false;
+            }
+            else {
+                return 
+                    static_cast<uint64_t>(from) > static_cast<uint64_t>(std::numeric_limits<Tto>::max());
+            }
+        }
+        else {
+            static_assert(always_false<Tfrom>, "Missing conversion_overflows case.");
+        }
+    }
 
     template<typename T>
     [[nodiscard]] constexpr data_types get_data_type() {
@@ -805,7 +825,7 @@ namespace blopp::impl {
                 ((m_error = map_impl<false>(value)), ...);
             }
             else {
-                (void)((!m_error.has_value() && (++m_property_count, m_error = map_impl<false>(value), 1) ) && ...);
+                (void)((!m_error.has_value() && (++m_property_count, m_error = map_impl<false>(value), 1)) && ...);
             }
 
             if (m_property_count > max_object_property_count) {
@@ -813,6 +833,41 @@ namespace blopp::impl {
             }
 
             return !m_error.has_value();
+        }
+
+        template<typename Tas, typename T>
+        auto map_as(T& value) -> bool {
+            using from_t = std::remove_cvref_t<T>;
+            using to_t = std::remove_cvref_t<Tas>;
+ 
+            static_assert(std::is_integral_v<Tas> || std::is_floating_point_v<Tas>,
+                "Can only cast integral and floating point types.");
+
+            if constexpr (std::is_same_v<from_t, to_t> == true) {
+                return map(value);
+            }
+            else if constexpr (
+                std::is_integral_v<from_t> == true && std::is_integral_v<to_t> == true ||
+                std::is_floating_point_v<from_t> == true && std::is_integral_v<to_t> == true)
+            {
+                if (conversion_overflows<from_t, to_t>(value)) {
+                    m_error = write_error_code::conversion_overflow;
+                    return false;
+                }
+
+                const auto casted_value = static_cast<to_t>(value);
+                return map(casted_value);
+            }
+            else if constexpr (
+                std::is_floating_point_v<from_t> == true && std::is_floating_point_v<to_t> == true ||
+                std::is_integral_v<from_t> == true && std::is_floating_point_v<to_t> == true)
+            {
+                const auto casted_value = static_cast<to_t>(value);
+                return map(casted_value);
+            }
+            else {
+                static_assert(always_false<Tas>, "Mising map_as case.");
+            }
         }
 
         [[nodiscard]] inline auto error() const {
@@ -1472,6 +1527,51 @@ namespace blopp::impl {
             }
 
             return !m_error.has_value();
+        }
+
+        template<typename Tas, typename T>
+        auto map_as(T& value) -> bool {
+            using from_t = std::remove_cvref_t<Tas>;
+            using to_t = std::remove_cvref_t<T>;
+
+            static_assert(std::is_integral_v<Tas> || std::is_floating_point_v<Tas>,
+                "Can only cast integral and floating point types.");
+
+            if constexpr (std::is_same_v<to_t, from_t> == true) {
+                return map(value);
+            }
+            else if constexpr (
+                (std::is_integral_v<to_t> == true && std::is_integral_v<from_t> == true) ||
+                (std::is_floating_point_v<to_t> == true && std::is_integral_v<from_t> == true))
+            {
+                auto from_value = from_t{};
+                if (!map(from_value)) {
+                    return false;
+                }
+
+                if (conversion_overflows<from_t, to_t>(from_value)) {
+                    m_error = read_error_code::conversion_overflow;
+                    return false;
+                }
+
+                value = static_cast<to_t>(from_value);
+                return true;
+            }
+            else if constexpr (
+                (std::is_floating_point_v<to_t> == true && std::is_floating_point_v<from_t> == true) ||
+                (std::is_integral_v<to_t> == true && std::is_floating_point_v<from_t> == true))
+            {
+                auto from_value = from_t{};
+                if (!map(from_value)) {
+                    return false;
+                }
+
+                value = static_cast<to_t>(from_value);
+                return true;
+            }
+            else {
+                static_assert(always_false<Tas>, "Mising map_as case.");
+            }
         }
 
         [[nodiscard]] inline auto error() const {
