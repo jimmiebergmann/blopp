@@ -847,8 +847,8 @@ namespace blopp::impl {
                 return map(value);
             }
             else if constexpr (
-                std::is_integral_v<from_t> == true && std::is_integral_v<to_t> == true ||
-                std::is_floating_point_v<from_t> == true && std::is_integral_v<to_t> == true)
+                (std::is_integral_v<from_t> == true && std::is_integral_v<to_t> == true) ||
+                (std::is_floating_point_v<from_t> == true && std::is_integral_v<to_t> == true))
             {
                 if (conversion_overflows<from_t, to_t>(value)) {
                     m_error = write_error_code::conversion_overflow;
@@ -859,8 +859,8 @@ namespace blopp::impl {
                 return map(casted_value);
             }
             else if constexpr (
-                std::is_floating_point_v<from_t> == true && std::is_floating_point_v<to_t> == true ||
-                std::is_integral_v<from_t> == true && std::is_floating_point_v<to_t> == true)
+                (std::is_floating_point_v<from_t> == true && std::is_floating_point_v<to_t> == true) ||
+                (std::is_integral_v<from_t> == true && std::is_floating_point_v<to_t> == true))
             {
                 const auto casted_value = static_cast<to_t>(value);
                 return map(casted_value);
