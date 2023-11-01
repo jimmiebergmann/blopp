@@ -101,6 +101,36 @@ namespace blopp {
     };
 
     template<typename TValue, typename TError>
+        requires std::is_void_v<TValue>
+    class result_wrapper<TValue, TError> {
+    public:
+
+        result_wrapper() = default;
+
+        template<typename T = TError>
+        result_wrapper(const T& error) : m_error(error) {}
+
+        template<typename T = TError>
+        result_wrapper(T&& error) : m_error(std::move(error)) {}
+
+        result_wrapper(const result_wrapper&) = delete;
+        result_wrapper(result_wrapper&&) = default;
+        result_wrapper& operator = (const result_wrapper&) = delete;
+        result_wrapper& operator = (result_wrapper&&) = default;
+
+        TError& error() { return m_error.value(); }
+        const TError& error() const { return m_error.value(); }
+
+        bool has_value() const noexcept { return !m_error.has_value(); }
+        operator bool() const noexcept { return has_value(); }
+
+    private:
+
+        std::optional<TError> m_error;
+    };
+
+
+    template<typename TValue, typename TError>
     using expected = result_wrapper<TValue, TError>;
 
     template<typename T, typename TError>
@@ -1978,7 +2008,7 @@ namespace blopp
     [[nodiscard]] auto write(const T& value, std::ostream& stream) -> write_void_result_type {
         auto result = write<TOptions, T>(value);
         if (!result) {
-            return make_unexpected<write_output_type, write_error_code>(result.error());
+            return make_unexpected<void, write_error_code>(result.error());
         }
 
         stream.write(reinterpret_cast<const char*>(result->data()), result->size());
@@ -1994,7 +2024,7 @@ namespace blopp
     [[nodiscard]] auto write(const T& value, const std::filesystem::path& path) -> write_void_result_type {
         std::ofstream stream(path, std::ofstream::binary);
         if (!stream.is_open()) {
-            return make_unexpected<write_output_type, write_error_code>(write_error_code::cannot_open_file);
+            return make_unexpected<void, write_error_code>(write_error_code::cannot_open_file);
         }
 
         return write<TOptions, T>(value, stream);
