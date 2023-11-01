@@ -273,11 +273,11 @@ struct blopp::object<test_user_defined_failure_fail> {
 template<>
 struct blopp::object<test_map_as> {
     static auto map(auto& context, auto& value) {
-        context.map_as<uint32_t>(value.value_ui32_as_ui32);
-        context.map_as<uint16_t>(value.value_ui32_as_ui16);
-        context.map_as<float>(value.value_ui32_as_f32);
-        context.map_as<int32_t>(value.value_f64_as_i32);
-        context.map_as<float>(value.value_f64_as_f32);
+        context.template map_as<uint32_t>(value.value_ui32_as_ui32);
+        context.template map_as<uint16_t>(value.value_ui32_as_ui16);
+        context.template map_as<float>(value.value_ui32_as_f32);
+        context.template map_as<int32_t>(value.value_f64_as_i32);
+        context.template map_as<float>(value.value_f64_as_f32);
     }
 };
 

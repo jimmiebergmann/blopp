@@ -21,7 +21,7 @@ or copy include/blopp.hpp to your project.
 ## Supported types
 * Fundamental data types, including 
     `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
-    `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`, `size_t`
+    `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
 * `enum`
 * `struct`, `class`
 * `std::basic_string`, `std::vector`, `std::list`, `std::array`, `c-style array`
@@ -116,7 +116,7 @@ Yes, if your compiler supports it, else a small std::expected-like class called 
 Due to limitations of std::expected.
 
 #### How can I convert members of my custom struct while writing/reading? 
-Use `context.map_as<T>` instead of `context.map`.  
+Use `context.template map_as<T>` instead of `context.map`.  
 `blopp::read` and `blopp::write` will return blopp::write/read_error_code::`conversion_overflow` if conversion results in an integer over or under-flow.
 
 #### How can I map my custom type without representing it as an object?
