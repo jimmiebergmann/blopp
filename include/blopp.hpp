@@ -328,6 +328,15 @@ namespace blopp::impl {
         has_value_and_is_reference = 3
     };
 
+    template<bool Vcondition>
+    [[nodiscard]] constexpr data_types coditional_data_type(const data_types true_data_type, const data_types false_data_type) {
+        if constexpr (Vcondition == true) {
+            return true_data_type;
+        }
+        else {
+            return false_data_type;
+        }
+    }
 
     template<data_types Vdata_type>
     struct fundamental_traits_base {
@@ -366,6 +375,20 @@ namespace blopp::impl {
     struct fundamental_traits<float> : fundamental_traits_base< data_types::float32> {};
     template<>
     struct fundamental_traits<double> : fundamental_traits_base< data_types::float64> {};
+
+    template<>
+    struct fundamental_traits<long>
+    {
+        static constexpr auto is_fundamental = true;
+        static constexpr auto data_type = coditional_data_type<sizeof(long) == 8>(data_types::int64, data_types::int32);
+    };
+
+    template<>
+    struct fundamental_traits<unsigned long>
+    {
+        static constexpr auto is_fundamental = true;
+        static constexpr auto data_type = coditional_data_type<sizeof(unsigned long) == 8>(data_types::uint64, data_types::uint32);
+    };
 
 
     template<typename T, template<typename...> typename TRef>
