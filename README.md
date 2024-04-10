@@ -1,5 +1,5 @@
 # blopp
-![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Workflow Status (master)](https://img.shields.io/github/workflow/status/jimmiebergmann/blopp/Build/master?label=Github&logo=Github) [![AppVeyor Status (master)](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/master?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
+![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/jimmiebergmann/blopp/github-build-and-test.yaml?branch=dev&logo=Github) [![AppVeyor Status](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/main?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
 Single header C++20 binary data serializer/deserializer.
 
 See [format_specification.md](https://github.com/jimmiebergmann/blopp/blob/main/format_specification.md) for a detailed description of the file format.
