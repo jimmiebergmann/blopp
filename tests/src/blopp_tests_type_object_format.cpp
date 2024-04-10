@@ -55,7 +55,7 @@ namespace {
 
 template<>
 struct blopp::object<vec3_1> {
-    static auto format(auto& context, const auto& value) {
+    static auto format(auto& context, auto& value) {
         context.format(
             value.x,
             value.y,
@@ -65,7 +65,7 @@ struct blopp::object<vec3_1> {
 
 template<>
 struct blopp::object<vec3_2> {
-    static auto map(auto& context, const auto& value) {
+    static auto map(auto& context, auto& value) {
         context.map(
             value.x,
             value.y,
