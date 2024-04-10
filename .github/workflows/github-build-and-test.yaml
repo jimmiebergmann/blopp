@@ -1,0 +1,151 @@
+name: Build and test
+on: push
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+        matrix:
+          compiler:
+            - cc: gcc-12
+              cxx: g++-12
+            - cc: clang-16
+              cxx: clang++-16
+          build_type: [Debug, Release]
+          include:
+            - build_type: Debug
+              output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install GCC packages
+        if: 
+          matrix.compiler.cc == 'gcc-12'
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install valgrind
+
+      - name: Install Clang packages
+        if: 
+          matrix.compiler.cc == 'clang-16'
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key 2>/dev/null | sudo apt-key add -
+          sudo add-apt-repository 'deb http://apt.llvm.org/focal llvm-toolchain-focal-16 main' -y
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt update
+          sudo apt install build-essential clang-16
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-16 90
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-16 90
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force
+        env:
+          CC: ${{matrix.compiler.cc}}
+          CXX: ${{matrix.compiler.cxx}}
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: ${{matrix.compiler.cc}}
+          CXX: ${{matrix.compiler.cxx}}
+
+      - name: Test
+        if: 
+          matrix.compiler.cc == 'clang-16'
+        run: |
+          cd tests/bin
+          ./blopp_tests${{matrix.output_name_postfix}}
+
+      - name: Test with valgrind
+        if: 
+          matrix.compiler.cc == 'gcc-12'
+        run: |
+          cd tests/bin
+          valgrind --leak-check=full --track-origins=yes --error-exitcode=1 ./blopp_tests${{matrix.output_name_postfix}}
+
+  mac:
+    runs-on: macos-latest
+
+    env:
+      HOMEBREW_NO_AUTO_CLEANUP: 1
+
+    strategy:
+      matrix:
+        compiler: 
+          - cc: clang
+            cxx: clang++
+        build_type: [Debug, Release]
+        include:
+          - build_type: Debug
+            output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Clang 16
+        run: |
+          brew install llvm@16
+          /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cc }} --version
+          /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cxx }} --version
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cc }}
+          CXX: /usr/local/opt/llvm@16/bin/${{ matrix.compiler.cxx }}
+
+      - name: Test
+        run: |
+          cd tests/bin
+          ./blopp_tests${{matrix.output_name_postfix}}
+
+  windows:
+    runs-on: windows-latest
+
+    strategy:
+        matrix:
+          build_type: [Debug, Release]
+          include:
+            - build_type: Debug
+              output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+
+      - name: Test
+        run: |
+          cd tests/bin
+          ./blopp_tests${{matrix.output_name_postfix}}.exe

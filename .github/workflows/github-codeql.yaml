@@ -1,0 +1,46 @@
+name: CodeQL Analyze
+on: push
+
+jobs:
+
+  linux:
+    runs-on: ubuntu-latest
+
+    strategy:
+        matrix:
+          compiler:
+            - cc: gcc-12
+              cxx: g++-12
+          build_type: [Debug]
+          include:
+            - build_type: Debug
+              output_name_postfix: _d
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: c++
+
+      - name: Setup Conan
+        run: |
+          pip3 install conan --upgrade
+          conan profile detect --force 
+
+      - name: Build
+        run: |
+          cd tests
+          conan install . --output-folder=build --build=missing --settings=build_type=${{matrix.build_type}}
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+          cmake --build . --config ${{matrix.build_type}}
+        env:
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          category: "/language:c++"

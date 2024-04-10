@@ -1,45 +1,150 @@
 # blopp
-![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) [![Travis CI](https://img.shields.io/travis/jimmiebergmann/blopp/main?label=Travis%20CI)](https://travis-ci.com/jimmiebergmann/blopp) [![AppVeyor](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/main?label=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/main)  
-Single header C++17 binary serializer/deserializer with respect to member alignments.
+![version](https://img.shields.io/badge/Version-v0.1.0-blue) [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT) ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/jimmiebergmann/blopp/github-build-and-test.yaml?branch=dev&logo=Github) [![AppVeyor Status](https://img.shields.io/appveyor/ci/jimmiebergmann/blopp/main?label=AppVeyor&logo=AppVeyor)](https://ci.appveyor.com/project/jimmiebergmann/blopp/branch/master)  
+Single header C++20 binary data serializer/deserializer.
+
+See [format_specification.md](https://github.com/jimmiebergmann/blopp/blob/main/format_specification.md) for a detailed description of the file format.
 
 ## Installation
 ```
 git clone https://github.com/jimmiebergmann/blopp.git
-Include blopp/blopp.hpp in your project.
+or copy include/blopp.hpp to your project.
 ```
 
 ## Requirements
-- C++17 compiler, tested with:
-  - clang-8
-  - gcc-8
-  - mvc 19.28 (Visual Studio 19)
-- Cmake - only for tests.
+- C++20 compiler, tested with:
+  - Windows: Visual Studio 2022 
+  - Linux: gcc-12
+  - Mac: clang-16
+- Cmake - Only for tests.
+- Conan - Only for tests.
+
+## Supported types
+* Fundamental data types, including 
+    `bool`, `char`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, 
+    `uint16_t`, `uint32_t`, `uint64_t`, `float`, `double`
+* `enum`
+* `struct`, `class`
+* `std::basic_string`, `std::vector`, `std::list`, `std::array`, `c-style array`
+* `std::map`, `std::multimap`
+* `std::optional`, `std::unique_ptr`, `std::shared_ptr`
+* `std::variant`
 
 ## Example
 ``` cpp
-struct data
-{
-    int32_t a;
-    bool b; // Example of alignment, offsetof(data, c) == 8, not 5.
-    double c;
+#include "blopp.hpp"
 
-    // Add this function to your struct.
-    template<typename t_context>
-    static constexpr auto blopp_map(t_context context)
-    {
-        // Map data members in expected binary order.
-        return context.map(
-            blopp_map_member(data, a),
-            blopp_map_member(data, b),
-            blopp_map_member(data, c));
+// Your data structures.
+enum class units : uint8_t {
+    kg,
+    lbs
+};
+
+struct product {
+    uint32_t id;
+    std::string name;
+    double price;
+    units unit;
+};
+
+struct store {
+    std::string name;
+    std::vector<product> products;
+};
+
+// Implement custom object mappers via specializations of blopp::object<T>.
+template<>
+struct blopp::object<product> {
+    static auto map(auto& context, auto& value) {
+        context.map(
+            value.id,
+            value.name,
+            value.price,
+            value.unit);
     }
 };
 
+template<>
+struct blopp::object<store> {
+    static auto map(auto& context, auto& value) {
+        context.map(
+            value.name,
+            value.products);
+
+        // Same as:
+        // context.map(value.name);
+        // context.map(value.products);
+    }
+};
+
+// Write and read your data structures.
 int main()
 {
-    // Serializing data and deserializing it back.
-    auto input = data{ 123, true, 128.75 };
-    auto raw_input = blopp::serialize(input);
-    auto output = blopp::deserialize<data>(raw_input);
+    const auto store_input = store{
+        .name = "Fruit store",
+        .products = {
+            {
+                .id = 1,
+                .name = "Apple",
+                .price = 1.5,
+                .unit = units::kg
+            },
+            {
+                .id = 2,
+                .name = "Orange",
+                .price = 4.1,
+                .unit = units::lbs
+            }
+        }
+    };
+
+    auto write_result = blopp::write(store_input /*, file_path*/);
+    if(!write_result) { /* Error handling. */}
+
+    auto read_result = blopp::read<store>(*write_result /*or file_path*/);
+    if(!read_result) { /* Error handling. */}
+
+    auto& store_output = read_result->value;
 }
+```
+
+
+## FAQ
+#### Does `blopp::read` return `std::expected`?
+Yes, if your compiler supports it, else a small std::expected-like class called `result_wrapper` is returned.
+
+#### Why isn't c-style arrays supported at root? 
+Due to limitations of std::expected.
+
+#### How can I convert members of my custom struct while writing/reading? 
+Use `context.template map_as<T>` instead of `context.map`.  
+`blopp::read` and `blopp::write` will return blopp::write/read_error_code::`conversion_overflow` if conversion results in an integer over or under-flow.
+
+#### How can I map my custom type without representing it as an object?
+Use `format` instead of `map` method in your object template specialization. 
+Return void or bool. Returning false will result in blopp::write/read_error_code::`user_defined_failure`.
+Here's an example:
+
+``` cpp
+struct vec3 {
+    float x, y, z;
+};
+
+template<>
+struct blopp::object<vec3> {
+    static auto format(auto& context, auto& value) {
+        context.format(value.x, value.y, value.z);
+    }
+};
+```
+
+Writing this object will result in a file size of `15` bytes, compared to `26` if map method were used.  
+Using `format` is great for small size objects, but is limited to fundamental and array data types only.
+
+## Build tests
+```
+cd tests
+conan install . --output-folder=build --build=missing --settings=build_type=Debug
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE="conan_toolchain.cmake"
+cmake --build . --config Debug
 ```
